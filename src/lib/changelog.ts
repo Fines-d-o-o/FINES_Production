@@ -9,6 +9,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "37.01",
+    datum: "16. 11. 2026",
+    spremembe: [
+      "Nova stran Podatki → Sync v TV: stanje vseh komponent FIN:TV (delovni plan po oddelkih, Delo - prejšnji dan, Zaključeni krovni) - ikona stanja, zadnja objava, koliko strani TV kaže danes. Delovni plan se objavi z gumbom Sync (vsak oddelek ali Sync vse) iz shranjenega plana - plana ni treba odpirati in shranjevati. Delo - prejšnji dan in Zaključeni krovni imata značko »Samodejno ob syncu« in čas uvoza Poročanega dela.",
+      "Objave na TV tečejo v ozadju ena za drugo (tudi ob menjavi strani). Ikona stanja (zelena kljukica = objavljeno, modra vrteča = objavljam, modra ura = čaka, rumen klicaj = danes ni strani, rdeč križec = napaka) je na kvadratku FIN:TV na strani in na novem gumbu FIN:TV v glavi (levo od Sync, pojasnilo v hover tekstu, klik odpre seznam s Podrobnosti in Sync vse). Ob koncu objave obvestilo.",
+      "Ob zapiranju zavihka ali Izhodu med objavo vprašanje »Objava na TV še teče - res zapreš?«.",
+      "Uvoz Poročanega dela ne čaka več na objavo na TV - objava gre v ozadje.",
+    ],
+  },
+  {
     verzija: "36.03",
     datum: "16. 11. 2026",
     spremembe: [

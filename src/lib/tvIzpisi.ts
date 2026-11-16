@@ -3,6 +3,9 @@
 import type { TvIzpis } from "@/components/TvPovezava";
 import type { OddelekKoda } from "./normativi";
 
+/** Oddelki s komponentami FIN:TV (vsak oddelek svoja komponenta za vsak izpis). */
+export const ODDELKI_TV: OddelekKoda[] = ["P", "M", "E", "T"];
+
 /** Koda komponente pregleda plana za oddelek (FinOS 025). */
 export const kodaPregleda = (oddelek: OddelekKoda) => `fp_plan_pregled_${oddelek.toLowerCase()}`;
 /** Koda komponente workflowa plana za oddelek (FinOS 026). */
@@ -13,7 +16,7 @@ export const kodaDela = (oddelek: OddelekKoda) => `fp_delo_vceraj_${oddelek.toLo
 export const kodaZakljucenih = (oddelek: OddelekKoda) => `fp_zakljuceni_krovni_${oddelek.toLowerCase()}`;
 
 const SYNC_POROCANO =
-  "Samodejno ob vsakem uvozu Poročanega dela (Sync na strani Podatki - zjutraj in popoldan). Sync teče v brskalniku, ki ima povezano mapo izvozov iz ERP; brez synca se TV ne osveži.";
+  "Samodejno ob vsakem uvozu Poročanega dela (Sync na strani Podatki - zjutraj in popoldan), v ozadju po uvozu. Sync teče v brskalniku, ki ima povezano mapo izvozov iz ERP; brez synca se TV ne osveži. Stanje: Podatki → Sync v TV.";
 
 /** Zasedenost → Produktivnost. */
 export const tvIzpisiProduktivnosti = (oddelek: OddelekKoda): TvIzpis[] => [
@@ -45,7 +48,7 @@ export const tvIzpisiDelovnegaPlana = (oddelek: OddelekKoda): TvIzpis[] => [
     koda: kodaWorkflowa(oddelek),
     vsebina: "Workflow po delovnih mestih: koraki (krovni nalogi) po dnevih - tekoči in naslednji teden (kot privzet pogled plana).",
     format: "PDF A4 ležeče, en list na delovno mesto, za vsak teden svoje strani.",
-    kdaj: "Ob vsakem Shrani plan - za vsak teden od tekočega naprej, za katerega je plan narejen (tekoči teden takoj, ostali ko so pripravljeni).",
+    kdaj: "Ob vsakem Shrani plan in z gumbom Sync na strani Podatki → Sync v TV (iz shranjenega plana) - za vsak teden od tekočega naprej, za katerega je plan narejen. Objava teče v ozadju; zavihka ne zapiraj, dokler ikona stanja ne pokaže kljukice.",
     velja: "Strani tedna veljajo pon - ned; TV v ponedeljek sam preklopi na nov teden.",
     prenos: "Zavihek Plan → Izvoz → PDF - workflow.",
   },
@@ -54,7 +57,7 @@ export const tvIzpisiDelovnegaPlana = (oddelek: OddelekKoda): TvIzpis[] => [
     koda: kodaPregleda(oddelek),
     vsebina: "Časovnica po celicah: krovni nalogi od začetka do roka, kosi po družinah.",
     format: "PDF A4 pokončno, en list na celico, za vsak delovni dan svoje strani.",
-    kdaj: "Ob vsakem Shrani plan (skupaj z workflowom).",
+    kdaj: "Ob vsakem Shrani plan in s Sync v TV (skupaj z workflowom).",
     velja: "Za vsak delovni dan svoje strani z oznako DANES na ta dan (petek velja do nedelje).",
     prenos: "Zavihek Plan → Izvoz → PDF - pregled (roki).",
   },

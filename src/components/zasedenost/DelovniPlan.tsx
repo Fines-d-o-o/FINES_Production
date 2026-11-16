@@ -26,6 +26,7 @@ import { imaNeshranjeno, lahkoZapustim, useNeshranjeno } from "@/lib/neshranjeno
 import { PodatkiVir } from "@/components/PodatkiVir";
 import { TvPovezava } from "@/components/TvPovezava";
 import { tvIzpisiDelovnegaPlana } from "@/lib/tvIzpisi";
+import { objaviPlanVOzadju } from "@/lib/tvOpravila";
 import { usePoSyncu } from "@/components/SyncProvider";
 import {
   delezNapredka,
@@ -816,34 +817,12 @@ function PlanOddelka({
   const workflow = async () => planZaDneve(dnevi, await odpremeNalogov());
 
   /**
-   * FIN:TV: workflow in pregled plana za vsak teden od tekočega do konca plana (vsak teden svoj PDF, TV kaže tekoči
-   * teden). Teče v ozadju po shranjevanju - podatki so posnetek ob kliku Shrani plan.
+   * FIN:TV: shranjen plan oddelka gre v vrsto objav (v ozadju - workflow in pregled za vsak teden do konca plana).
+   * Stanje kažeta ikona FIN:TV na strani in v glavi; ob koncu obvestilo.
    */
   function objaviNaTv() {
-    const zadnjiDan = efektivne.reduce<IsoDate | null>((m, p) => {
-      const d = razpored.get(p.id)?.do;
-      return d && (!m || d > m) ? d : m;
-    }, null);
-    void (async () => {
-      const [odpreme, druzine] = await Promise.all([odpremeNalogov(), druzineNormativov()]);
-      const { objaviPlanNaTv } = await import("@/lib/tvObjava");
-      return objaviPlanNaTv({
-        oddelek: oddelek.koda,
-        nazivOddelka: oddelek.naziv,
-        planTedna: (dn) => planZaDneve(dn, odpreme),
-        druzine,
-        zadnjiDan,
-        napredek: (t, vseh) => {
-          if (t === 1 && vseh > 1) notify("info", `FIN:TV: objavljam plan za ${vseh} tednov - tekoči teden bo na TV v pol minute, ostali sledijo. Production pusti odprt.`, 8000);
-        },
-      });
-    })()
-      .then((izid) => {
-        if (!izid?.length) return; // prazno ali prekinjeno z novejšim Shrani plan
-        const tedni = (n: number) => `${n} ${n === 1 ? "teden" : n === 2 ? "tedna" : n <= 4 ? "tedni" : "tednov"}`;
-        notify("success", `FIN:TV: plan objavljen - ${izid.map((d) => `${d.ime} ${tedni(d.tednov)}, ${d.strani} str.`).join(" · ")}.`);
-      })
-      .catch((e) => notify("warning", `Plan je shranjen, objava na FIN:TV ni uspela: ${(e as Error).message}`, 10000));
+    objaviPlanVOzadju(oddelek.koda, { spredaj: true });
+    notify("info", "FIN:TV: objava plana teče v ozadju - stanje vidiš na ikoni FIN:TV. Zavihka ne zapiraj do konca objave.", 8000);
   }
   /** Družine za PDF pregled: ident -> družina iz normativov, stolpci = vse družine (šifrant, sicer iz normativov). */
   const druzineNormativov = async () => {

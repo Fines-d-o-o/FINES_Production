@@ -20,7 +20,7 @@ import type { WorkflowPlan } from "./plan";
 import { ustvariPlanPdf } from "./planPdf";
 import { ustvariPlanPregledPdf, type DruzineNormativov } from "./planPregledPdf";
 import { getSupabase } from "./supabase";
-import { kodaDela, kodaPregleda, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
+import { ODDELKI_TV, kodaDela, kodaPregleda, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
 
 const KOSARA = "fos-tv-viri";
 /** Širina slike strani (4K). */
@@ -28,7 +28,6 @@ const SIRINA = 3840;
 /** Največ tednov naprej (plan za pol leta). */
 const NAJVEC_TEDNOV = 26;
 
-const ODDELKI: OddelekKoda[] = ["P", "M", "E", "T"];
 
 /** PDF -> slike strani (pdf.js, kot pdfStrani.ts v FinOS) + razmerje strani (višina / širina). */
 async function pdfVSlike(pdfBlob: Blob): Promise<{ slike: Blob[]; razmerja: number[] }> {
@@ -59,35 +58,6 @@ async function pdfVSlike(pdfBlob: Blob): Promise<{ slike: Blob[]; razmerja: numb
     await pdf.loadingTask.destroy();
   }
   return { slike, razmerja };
-}
-
-/** Stanje komponente FIN:TV za prikaz na strani (TvPovezava): ali obstaja, ali je vklopljena, zadnja objava. */
-export type StanjeTvKomponente = {
-  koda: string;
-  ime: string | null;
-  /** null = komponente ni v FinOS (migracija ni zagnana) ali ni dostopa. */
-  vklopljena: boolean | null;
-  zadnja: { cas: string; izvor: string; strani: number } | null;
-};
-
-/** Stanje izbranih komponent FIN:TV (fos_tv_viri + fos_tv_zadnje_objave). */
-export async function stanjeTvKomponent(kode: string[]): Promise<StanjeTvKomponente[]> {
-  const sb = getSupabase();
-  const { data: viri } = await sb.from("fos_tv_viri").select("id, koda, ime, vklopljen").in("koda", kode).eq("visible", true);
-  const ids = (viri ?? []).map((v) => v.id as number);
-  const { data: objave } = ids.length
-    ? await sb.from("fos_tv_zadnje_objave").select("id_vira, created_at, izvor, strani").in("id_vira", ids)
-    : { data: [] as { id_vira: number; created_at: string; izvor: string; strani: string[] }[] };
-  return kode.map((koda) => {
-    const v = (viri ?? []).find((x) => x.koda === koda);
-    const o = v ? (objave ?? []).find((x) => x.id_vira === v.id) : undefined;
-    return {
-      koda,
-      ime: (v?.ime as string) ?? null,
-      vklopljena: v ? !!v.vklopljen : null,
-      zadnja: o ? { cas: o.created_at as string, izvor: (o.izvor as string) ?? "", strani: (o.strani as string[])?.length ?? 0 } : null,
-    };
-  });
 }
 
 /** Ali je komponenta v FinOS in vklopljena (sicer se nič ne ustvari). */
@@ -123,7 +93,7 @@ const zadnjaObjava = new Map<string, number>();
  * Plan po tednih na FIN:TV (workflow + pregled). `planTedna(dnevi)` = WorkflowPlan za 5 delovnih dni tedna
  * (pripraviWorkflow), `zadnjiDan` = konec zadnjega koraka v planu. Plan tedna se izračuna enkrat za oba dokumenta.
  * Izklopljene / manjkajoče komponente se preskočijo. Tekoči teden se objavi takoj (TV ga pokaže v ~20 s), vsi tedni
- * pa na koncu. `napredek(teden, vseh)` = obvestilo o napredku. Vrne null, ko jo je prekinil novejši Shrani plan.
+ * pa na koncu. `napredek(tednov, vseh)` = koliko tednov je pripravljenih. Vrne null, ko jo je prekinil novejši Shrani plan.
  */
 export async function objaviPlanNaTv({
   oddelek,
@@ -154,9 +124,9 @@ export async function objaviPlanNaTv({
 
   const tedni: IsoDate[] = [];
   for (let pon = prvi; pon <= mondayOf(zadnjiDan) && tedni.length < NAJVEC_TEDNOV; pon = addDays(pon, 7)) tedni.push(pon);
+  napredek?.(0, tedni.length);
   for (const [t, pon] of tedni.entries()) {
     if (prekinjena()) return null;
-    napredek?.(t + 1, tedni.length);
     // plan tedna po številu tednov dokumenta (izračuna se enkrat za vse dokumente z isto dolžino)
     const plani = new Map<number, WorkflowPlan>();
     const planZa = (tednov: number) => {
@@ -166,6 +136,7 @@ export async function objaviPlanNaTv({
     await dodajTeden(zbirke, pon, planZa, druzine);
     // tekoči teden takoj na TV, ostali ob koncu (nova objava zamenja prejšnjo)
     if (t === 0 && tedni.length > 1 && !prekinjena()) await objavi(zbirke, nazivOddelka);
+    napredek?.(t + 1, tedni.length);
   }
   if (prekinjena()) return null;
   return objavi(zbirke, nazivOddelka);
@@ -227,7 +198,7 @@ export async function objaviDeloNaTv(izvor = "uvoz poročanega dela"): Promise<{
   const danes = toIso(new Date());
   const datum = prevWorkday(danes);
   const kode: OddelekKoda[] = [];
-  for (const o of ODDELKI) if (await vklopljena(kodaDela(o))) kode.push(o);
+  for (const o of ODDELKI_TV) if (await vklopljena(kodaDela(o))) kode.push(o);
   if (!kode.length) return { datum, oddelki: [] };
   const [{ pripraviDelo }, { ustvariDeloPdf }] = await Promise.all([import("./deloVceraj"), import("./deloPdf")]);
   const zdaj = Date.now();
@@ -267,7 +238,7 @@ const VELJA_ZAKLJUCENI_DNI = 7;
 export async function objaviZakljuceneNaTv(izvor = "uvoz poročanega dela"): Promise<{ oddelki: string[] }> {
   const danes = toIso(new Date());
   const kode: OddelekKoda[] = [];
-  for (const o of ODDELKI) if (await vklopljena(kodaZakljucenih(o))) kode.push(o);
+  for (const o of ODDELKI_TV) if (await vklopljena(kodaZakljucenih(o))) kode.push(o);
   if (!kode.length) return { oddelki: [] };
   const [{ pripraviZakljucene }, { ustvariZakljucenePdf }] = await Promise.all([import("./zakljuceniKrovni"), import("./zakljuceniPdf")]);
   const zdaj = Date.now();

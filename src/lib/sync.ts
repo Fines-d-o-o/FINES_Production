@@ -49,23 +49,10 @@ const UVOZ: Record<SyncDatotekaKljuc, (f: File) => Promise<RezultatUvoza>> = {
   porocano: async (f) => {
     const { vrstice, vnosov, opozorila } = await preberiPorocanoXlsx(f);
     const { posodobljeno } = await shraniPorocanoUvoz(f.name, vrstice);
-    let tv = "";
-    // FIN:TV "Delo - prejšnji dan" (vklopljene komponente) - napaka objave ne pokvari uvoza
-    try {
-      const { objaviDeloNaTv } = await import("./tvObjava");
-      const izid = await objaviDeloNaTv();
-      if (izid.oddelki.length) tv = ` · FIN:TV delo ${izid.datum}: ${izid.oddelki.join(", ")}`;
-    } catch (e) {
-      opozorila.push(`FIN:TV (Delo - prejšnji dan) ni objavljen: ${(e as Error).message}`);
-    }
-    try {
-      const { objaviZakljuceneNaTv } = await import("./tvObjava");
-      const izid = await objaviZakljuceneNaTv();
-      if (izid.oddelki.length) tv += ` · FIN:TV zaključeni krovni: ${izid.oddelki.join(", ")}`;
-    } catch (e) {
-      opozorila.push(`FIN:TV (Zaključeni krovni) ni objavljen: ${(e as Error).message}`);
-    }
-    return { opis: `${vnosov} vnosov (${vrstice.length} po dnevih, posodobljenih ${posodobljeno})${tv}`, opozorila };
+    // FIN:TV "Delo - prejšnji dan" in "Zaključeni krovni": objava v ozadju (vrsta objav, stanje v glavi in Sync v TV)
+    const { objaviPorocanoVOzadju } = await import("./tvOpravila");
+    objaviPorocanoVOzadju();
+    return { opis: `${vnosov} vnosov (${vrstice.length} po dnevih, posodobljenih ${posodobljeno}) · FIN:TV se objavlja v ozadju`, opozorila };
   },
   izdaje: async (f) => {
     const p = await preberiIzdajeXlsx(f);

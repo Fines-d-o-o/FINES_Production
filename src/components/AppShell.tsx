@@ -18,6 +18,9 @@ import { Prijava } from "./Prijava";
 import { ToastProvider } from "./ui/Toast";
 import { SyncGlava } from "./SyncGlava";
 import { SyncProvider } from "./SyncProvider";
+import { TvGlava } from "./TvGlava";
+import { TvProvider } from "./TvProvider";
+import { lahkoPrekinemTv } from "@/lib/tvVrsta";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -116,6 +119,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   async function exitApp() {
     if (!lahkoZapustim()) return;
+    // Odjava bi prekinila objavo na FIN:TV, ki teče v ozadju
+    if (!lahkoPrekinemTv()) return;
     // Odjava -> aplikacija pokaže prijavno okno; zavihek se zapre, če ga je odprla skripta.
     await odjava();
     window.close();
@@ -136,6 +141,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <DostopContext.Provider value={dostop}>
     <ToastProvider>
       <SyncProvider>
+      <TvProvider>
         <div className="flex min-h-dvh flex-col overflow-x-clip">
           {/* ============ GLAVA ============ */}
           <header className="sticky top-0 z-40 border-b-4 border-fines-500 bg-white">
@@ -179,6 +185,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   onClick={nazaj}
                 />
               )}
+              {dostop.ima("/podatki/tv") && <TvGlava />}
               {dostop.ima("/podatki") && <SyncGlava />}
               <IconButton
                 hint="Prikaži verzije in spremembe aplikacije"
@@ -260,6 +267,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </div>
         </Modal>
+      </TvProvider>
       </SyncProvider>
     </ToastProvider>
     </DostopContext.Provider>
