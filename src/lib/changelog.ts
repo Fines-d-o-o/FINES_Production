@@ -9,6 +9,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "36.03",
+    datum: "16. 11. 2026",
+    spremembe: [
+      "FIN:TV »Delovni plan« (workflow): na TV sta zdaj 2 tedna - tekoči in naslednji (kot privzet pogled plana), v ponedeljek se premakne za teden.",
+      "FIN:TV »Delovni plan - pregled«: oznaka DANES je na TV vedno pravi dan - za vsak delovni dan se ustvarijo svoje strani (prej je ostal dan, ko je bil plan shranjen). Objava zato traja dlje - Production pusti odprt do obvestila.",
+    ],
+  },
+  {
     verzija: "36.02",
     datum: "13. 11. 2026",
     spremembe: [

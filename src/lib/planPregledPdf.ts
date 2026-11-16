@@ -19,7 +19,7 @@ import {
   type PDFPage,
   type RGB,
 } from "pdf-lib";
-import { addDays, formatShort, isoWeek, mondayOf, toIso } from "./dates";
+import { addDays, formatShort, isoWeek, mondayOf, toIso, type IsoDate } from "./dates";
 import { barvaCelice, besediloKosov, danKratko, ddmm, oznakaKoraka, type WorkflowCelica, type WorkflowKorak, type WorkflowPlan } from "./plan";
 import {
   A4,
@@ -465,18 +465,17 @@ function kartica(stran: PDFPage, f: Pisave, k: WorkflowKorak, p: Postavitev, vrh
 }
 
 /** Oznaka DANES: oranžna črtkana črta čez list in značka nad stolpcem rokov. */
-function danes(stran: PDFPage, f: Pisave, y: number) {
+function danes(stran: PDFPage, f: Pisave, y: number, danesIso: IsoDate) {
   stran.drawLine({ start: { x: ROB, y }, end: { x: W - ROB, y }, thickness: 1, color: ORANZNA, dashArray: [3, 2.5] });
-  const t = `DANES ${ddmm(toIso(new Date()))}`;
+  const t = `DANES ${ddmm(danesIso)}`;
   const w = f.krepka.widthOfTextAtSize(t, VEL.majhno) + 12;
   zaobljen(stran, DATUM_DESNO - w, y - 6, w, 12, 6, ORANZNA);
   stran.drawText(t, { x: DATUM_DESNO - w + 6, y: y - 2.4, size: VEL.majhno, font: f.krepka, color: BELA });
 }
 
 /** Časovnica s karticami od lista `l` naprej; kartica, ki ne gre na preostanek lista, gre na nov list. */
-function casovnica(kx: Kontekst, c: WorkflowCelica, barva: RGB, l: List, kartice: Postavitev[], iDanes: number) {
+function casovnica(kx: Kontekst, c: WorkflowCelica, barva: RGB, l: List, kartice: Postavitev[], iDanes: number, danesIso: IsoDate) {
   const { f } = kx;
-  const danesIso = toIso(new Date());
   let i = 0;
   while (i < kartice.length) {
     // kartice na tem listu
@@ -502,17 +501,17 @@ function casovnica(kx: Kontekst, c: WorkflowCelica, barva: RGB, l: List, kartice
       kartica(l.stran, f, k, kartice[ik], vrh);
       vozlisce(l.stran, f, ik + 1, yS, opozorilo(k) ? RDECA : minulo ? MINULO : ORANZNA);
       datumKoraka(l.stran, f, k, yS, minulo);
-      if (ik === iDanes) danes(l.stran, f, j === 0 ? vrh + DANES_VRH - 2 : vrh + RAZMAK / 2);
+      if (ik === iDanes) danes(l.stran, f, j === 0 ? vrh + DANES_VRH - 2 : vrh + RAZMAK / 2, danesIso);
     });
     if (i < kartice.length) l = novList(kx, c, barva, true);
   }
 }
 
-export async function ustvariPlanPregledPdf(plan: WorkflowPlan, druzine: DruzineNormativov): Promise<Blob> {
+/** `danesIso` = dan oznake DANES (FIN:TV: vsak dan svoje strani), privzeto današnji. */
+export async function ustvariPlanPregledPdf(plan: WorkflowPlan, druzine: DruzineNormativov, danesIso: IsoDate = toIso(new Date())): Promise<Blob> {
   if (plan.celice.length === 0) throw new Error("V prikazanem obdobju ni postavitev.");
   const { pdf, logo, ...f } = await novDokument(`Delovni plan - pregled ${plan.oddelek}`);
   const kx: Kontekst = { pdf, f, logo, plan };
-  const danesIso = toIso(new Date());
 
   // stalni stolpci: vse glavne družine (abecedno) + "Brez"
   const stolpci = [...new Set(druzine.vse.map(glavnaDruzina).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -528,7 +527,7 @@ export async function ustvariPlanPregledPdf(plan: WorkflowPlan, druzine: Druzine
     l = planPoTednih(kx, c, barva, l, stolpci, druzinaNaloga);
     const kartice = c.koraki.map((k) => postaviKartico(k, f, druzinaNaloga));
     const iDanes = c.koraki[0] && c.koraki[0].od <= danesIso ? c.koraki.findIndex((k) => k.do >= danesIso) : -1;
-    casovnica(kx, c, barva, l, kartice, iDanes);
+    casovnica(kx, c, barva, l, kartice, iDanes, danesIso);
   });
 
   noga(pdf, f.navadna, `FINES d.o.o. | Production | Delovni plan - pregled ${plan.oddelek} | levo: rok (velik datum) in začetek koraka`);

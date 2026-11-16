@@ -6,7 +6,8 @@
 //
 // Delovni plan - workflow in pregled (vsak oddelek svoja komponenta za vsakega): ob "Shrani plan" se za VSAK TEDEN, za
 // katerega je plan narejen (od tekočega tedna naprej), ustvari svoj PDF; strani tedna veljajo pon - ned. TV v ponedeljek
-// sam preklopi na nov teden. Nova objava zamenja vse tedne naenkrat. Izklopljena / manjkajoča komponenta = nič se ne ustvari.
+// sam preklopi na nov teden. Workflow pokaže 2 tedna (teden + naslednji, kot privzet pogled plana); pregled ima za
+// vsak delovni dan svoje strani (oznaka DANES), strani dneva veljajo ta dan (petek do nedelje). Nova objava zamenja vse tedne naenkrat. Izklopljena / manjkajoča komponenta = nič se ne ustvari.
 //
 // Delo - prejšnji dan (vsak oddelek svoja komponenta, FinOS 027): ob vsakem uvozu Poročanega dela (Sync) se za prejšnji
 // delovni dan ustvari stran 16:9 na oddelek (deloPdf.ts); stran velja samo na dan objave.
@@ -99,11 +100,15 @@ async function vklopljena(koda: string): Promise<boolean> {
 type DokumentPlana = {
   ime: string;
   koda: (oddelek: OddelekKoda) => string;
-  pdf: (plan: WorkflowPlan, druzine: DruzineNormativov) => Promise<Blob>;
+  /** Koliko tednov pokaže ena stran (od tedna veljavnosti naprej) - workflow 2 tedna kot privzet pogled plana. */
+  tednov: number;
+  /** Svoje strani za vsak delovni dan (oznaka DANES na pravem mestu), sicer ene strani za cel teden. */
+  poDnevih: boolean;
+  pdf: (plan: WorkflowPlan, druzine: DruzineNormativov, danes: IsoDate) => Promise<Blob>;
 };
 const DOKUMENTI: DokumentPlana[] = [
-  { ime: "workflow", koda: kodaWorkflowa, pdf: (plan) => ustvariPlanPdf(plan) },
-  { ime: "pregled", koda: kodaPregleda, pdf: (plan, druzine) => ustvariPlanPregledPdf(plan, druzine) },
+  { ime: "workflow", koda: kodaWorkflowa, tednov: 2, poDnevih: false, pdf: (plan) => ustvariPlanPdf(plan) },
+  { ime: "pregled", koda: kodaPregleda, tednov: 1, poDnevih: true, pdf: (plan, druzine, danes) => ustvariPlanPregledPdf(plan, druzine, danes) },
 ];
 
 /** Objavljeni dokumenti (samo vklopljene komponente, ki imajo strani). Prazno = nič objavljeno. */
@@ -152,8 +157,13 @@ export async function objaviPlanNaTv({
   for (const [t, pon] of tedni.entries()) {
     if (prekinjena()) return null;
     napredek?.(t + 1, tedni.length);
-    const plan = planTedna(Array.from({ length: 5 }, (_, i) => addDays(pon, i)));
-    if (plan.celice.length) await dodajTeden(zbirke, pon, plan, druzine);
+    // plan tedna po številu tednov dokumenta (izračuna se enkrat za vse dokumente z isto dolžino)
+    const plani = new Map<number, WorkflowPlan>();
+    const planZa = (tednov: number) => {
+      if (!plani.has(tednov)) plani.set(tednov, planTedna(Array.from({ length: tednov }, (_, w) => Array.from({ length: 5 }, (_, i) => addDays(pon, w * 7 + i))).flat()));
+      return plani.get(tednov)!;
+    };
+    await dodajTeden(zbirke, pon, planZa, druzine);
     // tekoči teden takoj na TV, ostali ob koncu (nova objava zamenja prejšnjo)
     if (t === 0 && tedni.length > 1 && !prekinjena()) await objavi(zbirke, nazivOddelka);
   }
@@ -161,18 +171,29 @@ export async function objaviPlanNaTv({
   return objavi(zbirke, nazivOddelka);
 }
 
-/** Strani enega tedna za vse dokumente -> košara. */
-async function dodajTeden(zbirke: Zbirka[], pon: IsoDate, plan: WorkflowPlan, druzine: DruzineNormativov) {
+/**
+ * Strani enega tedna za vse dokumente -> košara. Dokument po dnevih: za vsak delovni dan svoj PDF z oznako DANES na
+ * ta dan (petek velja do nedelje); dnevi, ki so že minili, se preskočijo. Sicer en PDF za cel teden (pon - ned).
+ */
+async function dodajTeden(zbirke: Zbirka[], pon: IsoDate, planZa: (tednov: number) => WorkflowPlan, druzine: DruzineNormativov) {
+  const danes = toIso(new Date());
   for (const z of zbirke) {
-    const { slike, razmerja } = await pdfVSlike(await z.dok.pdf(plan, druzine));
-    for (let i = 0; i < slike.length; i++) {
-      const pot = `${z.mapa}/${pon}-${i + 1}.webp`;
-      const { error } = await getSupabase().storage.from(KOSARA).upload(pot, slike[i], { contentType: "image/webp", cacheControl: "31536000", upsert: false });
-      if (error) throw new Error(`Nalaganje strani na TV (${z.dok.ime}): ${error.message}`);
-      z.strani.push(pot);
-      z.razmerja.push(razmerja[i]);
-      z.veljaOd.push(pon);
-      z.veljaDo.push(addDays(pon, 6));
+    const plan = planZa(z.dok.tednov);
+    if (!plan.celice.length) continue;
+    const obdobja = z.dok.poDnevih
+      ? Array.from({ length: 5 }, (_, i) => ({ od: addDays(pon, i), do: addDays(pon, i === 4 ? 6 : i) })).filter((o) => o.do >= danes)
+      : [{ od: pon, do: addDays(pon, 6) }];
+    for (const o of obdobja) {
+      const { slike, razmerja } = await pdfVSlike(await z.dok.pdf(plan, druzine, o.od > danes ? o.od : danes));
+      for (let i = 0; i < slike.length; i++) {
+        const pot = `${z.mapa}/${o.od}-${i + 1}.webp`;
+        const { error } = await getSupabase().storage.from(KOSARA).upload(pot, slike[i], { contentType: "image/webp", cacheControl: "31536000", upsert: false });
+        if (error) throw new Error(`Nalaganje strani na TV (${z.dok.ime}): ${error.message}`);
+        z.strani.push(pot);
+        z.razmerja.push(razmerja[i]);
+        z.veljaOd.push(o.od);
+        z.veljaDo.push(o.do);
+      }
     }
     z.tednov++;
   }

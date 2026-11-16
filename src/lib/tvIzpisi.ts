@@ -43,7 +43,7 @@ export const tvIzpisiDelovnegaPlana = (oddelek: OddelekKoda): TvIzpis[] => [
   {
     naslov: "Delovni plan - workflow",
     koda: kodaWorkflowa(oddelek),
-    vsebina: "Workflow po delovnih mestih: koraki (krovni nalogi) po dnevih tedna.",
+    vsebina: "Workflow po delovnih mestih: koraki (krovni nalogi) po dnevih - tekoči in naslednji teden (kot privzet pogled plana).",
     format: "PDF A4 ležeče, en list na delovno mesto, za vsak teden svoje strani.",
     kdaj: "Ob vsakem Shrani plan - za vsak teden od tekočega naprej, za katerega je plan narejen (tekoči teden takoj, ostali ko so pripravljeni).",
     velja: "Strani tedna veljajo pon - ned; TV v ponedeljek sam preklopi na nov teden.",
@@ -53,9 +53,9 @@ export const tvIzpisiDelovnegaPlana = (oddelek: OddelekKoda): TvIzpis[] => [
     naslov: "Delovni plan - pregled (roki)",
     koda: kodaPregleda(oddelek),
     vsebina: "Časovnica po celicah: krovni nalogi od začetka do roka, kosi po družinah.",
-    format: "PDF A4 pokončno, en list na celico, za vsak teden svoje strani.",
+    format: "PDF A4 pokončno, en list na celico, za vsak delovni dan svoje strani.",
     kdaj: "Ob vsakem Shrani plan (skupaj z workflowom).",
-    velja: "Strani tedna veljajo pon - ned.",
+    velja: "Za vsak delovni dan svoje strani z oznako DANES na ta dan (petek velja do nedelje).",
     prenos: "Zavihek Plan → Izvoz → PDF - pregled (roki).",
   },
 ];
