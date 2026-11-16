@@ -9,6 +9,13 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "37.02",
+    datum: "16. 11. 2026",
+    spremembe: [
+      "Doizdaja → Aktivni nalogi: v filtru »Material razprtega naloga« je nov checkbox »Ne šteje« - izklopljen skrije material skupin, ki se ne štejejo v delež izdanega (npr. pločevina).",
+    ],
+  },
+  {
     verzija: "37.01",
     datum: "16. 11. 2026",
     spremembe: [

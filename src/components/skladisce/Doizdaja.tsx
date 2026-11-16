@@ -190,6 +190,8 @@ type Shranjeno = Nastavitve & {
   grupiraj: boolean;
   /** Katere vrstice materiala pokaže razprt nalog v zavihku Aktivni nalogi. */
   prikazVrstic: StanjeVrstice[];
+  /** Ali razprt nalog pokaže tudi material skupin, ki se ne štejejo v delež izdanega. */
+  prikazNeSteje: boolean;
 };
 const PRIVZETO_SHRANJENO: Shranjeno = {
   ...PRIVZETE_NASTAVITVE,
@@ -198,6 +200,7 @@ const PRIVZETO_SHRANJENO: Shranjeno = {
   pogled: "material",
   grupiraj: true,
   prikazVrstic: ["neizdano", "delno"],
+  prikazNeSteje: true,
 };
 
 function preberiShranjeno(): Shranjeno {
@@ -633,6 +636,12 @@ function DoizdajaInner() {
                           hint={`${nast.prikazVrstic.includes(sv) ? "Skrij" : "Prikaži"} ${OPIS_VRSTICE[sv].toLowerCase()} material pod nalogom`}
                         />
                       ))}
+                      <FilterCheckbox
+                        label="Ne šteje"
+                        checked={nast.prikazNeSteje}
+                        onChange={(prikazNeSteje) => spremeni({ prikazNeSteje })}
+                        hint={`${nast.prikazNeSteje ? "Skrij" : "Prikaži"} material skupin, ki se ne štejejo`}
+                      />
                     </div>
                   </FilterPolje>
                 )}
@@ -649,6 +658,7 @@ function DoizdajaInner() {
                           faze: PRIVZETE_FAZE,
                           razvrsti: "starost",
                           prikazVrstic: PRIVZETO_SHRANJENO.prikazVrstic,
+                          prikazNeSteje: PRIVZETO_SHRANJENO.prikazNeSteje,
                         });
                       }}
                     >
@@ -706,6 +716,7 @@ function DoizdajaInner() {
               vrsticePoNalogu={vrsticePoNalogu}
               izlocene={izlocene}
               prikazVrstic={nast.prikazVrstic}
+              prikazNeSteje={nast.prikazNeSteje}
             />
           )}
         </>
@@ -1204,12 +1215,14 @@ function AktivniNalogi({
   vrsticePoNalogu,
   izlocene,
   prikazVrstic,
+  prikazNeSteje,
 }: {
   nalogi: NalogPregled[];
   prag: number;
   vrsticePoNalogu: Map<string, IzdajaVrstica[]>;
   izlocene: string[];
   prikazVrstic: StanjeVrstice[];
+  prikazNeSteje: boolean;
 }) {
   const [razprti, setRazprti] = useState<Set<string>>(new Set());
   const sort = useRazvrscanje<NalogPregled, KljucNaloga>({
@@ -1340,6 +1353,7 @@ function AktivniNalogi({
                           vrstice={vrsticePoNalogu.get(n.st_naloga) ?? []}
                           izlocene={izlocene}
                           prikaz={prikazVrstic}
+                          prikazNeSteje={prikazNeSteje}
                         />
                       </td>
                     </tr>
@@ -1369,10 +1383,12 @@ function MaterialNaloga({
   vrstice,
   izlocene,
   prikaz,
+  prikazNeSteje,
 }: {
   vrstice: IzdajaVrstica[];
   izlocene: string[];
   prikaz: StanjeVrstice[];
+  prikazNeSteje: boolean;
 }) {
   const sort = useRazvrscanje<IzdajaVrstica, KljucMateriala>({
     ident: (v) => v.ident,
@@ -1386,7 +1402,11 @@ function MaterialNaloga({
     stanje: (v) => VRSTNI_RED_VRSTIC.indexOf(stanjeVrstice(v)),
   });
   const stevilo = (sv: StanjeVrstice) => vrstice.filter((v) => stanjeVrstice(v) === sv).length;
-  const prikazane = sort.razvrsti(vrstice.filter((v) => prikaz.includes(stanjeVrstice(v))));
+  const prikazane = sort.razvrsti(
+    vrstice.filter(
+      (v) => prikaz.includes(stanjeVrstice(v)) && (prikazNeSteje || !izlocene.includes(v.skupina ?? "")),
+    ),
+  );
   const skrite = vrstice.length - prikazane.length;
 
   return (
