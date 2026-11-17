@@ -70,7 +70,7 @@ export function TvGlava() {
                   <StanjeIkona stanje={ocena.stanje} />
                   <span className="min-w-0 flex-1 truncate font-semibold text-ink-800">{s.naslov}</span>
                   <span className="shrink-0 text-right text-xs tabular-nums text-ink-500">
-                    {o ? `objavljam${napredekOpravila(o)}` : s.samodejno ? `ob syncu · ${casSync(zadnja)}` : casSync(zadnja)}
+                    {o ? `objavljam${napredekOpravila(o)}` : s.samodejno.length ? `ob syncu · ${casSync(zadnja)}` : casSync(zadnja)}
                   </span>
                 </li>
               );

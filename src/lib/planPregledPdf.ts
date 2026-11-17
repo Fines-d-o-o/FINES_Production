@@ -44,6 +44,7 @@ import {
   zaobljen,
   type Pisave,
 } from "./porociloPdf";
+import { glavnaDruzina } from "./normativi";
 import { formatNum, formatUre } from "./stevila";
 
 /** Družine iz normativov: ident -> koda družine in seznam vseh kod (za stalne stolpce). */
@@ -89,8 +90,6 @@ const DANES_VRH = 16; // DANES nad prvo kartico lista
 const KONICA = 18; // prostor za konico puščice pod zadnjo kartico
 
 const BREZ_DRUZINE = "Brez";
-/** Glavna družina: brez pripone različice (OCB-e, OCB-k, OCB-o -> OCB). */
-const glavnaDruzina = (koda: string) => koda.trim().replace(/-[a-z]+$/, "");
 
 const kosiKoraka = (k: WorkflowKorak) => k.nalogi.reduce((s, n) => s + (n.kos ?? 0), 0);
 const opozorilo = (k: WorkflowKorak) => k.brezKapacitete > 0;

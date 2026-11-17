@@ -14,6 +14,13 @@ export const kodaWorkflowa = (oddelek: OddelekKoda) => `fp_plan_workflow_${oddel
 export const kodaDela = (oddelek: OddelekKoda) => `fp_delo_vceraj_${oddelek.toLowerCase()}`;
 /** Koda komponente "Zaključeni krovni" za oddelek (FinOS 028). */
 export const kodaZakljucenih = (oddelek: OddelekKoda) => `fp_zakljuceni_krovni_${oddelek.toLowerCase()}`;
+/** Koda komponente "Pripravljenost materiala" za oddelek (FinOS 029). */
+export const kodaPripravljenosti = (oddelek: OddelekKoda) => `fp_pripravljenost_mat_${oddelek.toLowerCase()}`;
+
+/** Uvozi, po katerih se Pripravljenost materiala samodejno objavi na TV. */
+export const SYNC_PRIPRAVLJENOST = ["izdaje", "material", "dobave", "nalogi"] as const;
+/** Koliko dni veljajo strani Pripravljenosti (sync je vsak delovni dan - po tem TV ne kaže zastarelih podatkov). */
+export const VELJA_PRIPRAVLJENOST_DNI = 3;
 
 const SYNC_POROCANO =
   "Samodejno ob vsakem uvozu Poročanega dela (Sync na strani Podatki - zjutraj in popoldan), v ozadju po uvozu. Sync teče v brskalniku, ki ima povezano mapo izvozov iz ERP; brez synca se TV ne osveži. Stanje: Podatki → Sync v TV.";
@@ -40,6 +47,19 @@ export const tvIzpisiProduktivnosti = (oddelek: OddelekKoda): TvIzpis[] => [
     prenos: "Zavihek Zaključeni krovni → Izvoz → PDF - zaključeni krovni.",
   },
 ];
+
+/** Proizvodnja → Planiranje → Pripravljenost materiala (vsak oddelek svoja komponenta). */
+export const tvIzpisiPripravljenosti = (naziv: (o: OddelekKoda) => string): TvIzpis[] =>
+  ODDELKI_TV.map((o) => ({
+    naslov: `Pripravljenost materiala · ${naziv(o)}`,
+    koda: kodaPripravljenosti(o),
+    vsebina:
+      "Za vsak krovni nalog iz delovnega plana oddelka velika lista materiala, ki ni na zalogi: šifra, material, količina, naročilo, datum prihoda in stanje; zgoraj družina, začetek v planu in kdaj je material kompleten. Krovni z vsem materialom v hiši so na eni zbirni strani.",
+    format: "PDF, stran 16:9 na krovni nalog (TV jih vrti).",
+    kdaj: "Samodejno po vsakem uvozu Izdaj, Materiala, Naročil dobavitelju ali Delovnih nalogov (Sync na strani Podatki), po Shrani plan in z gumbom Sync na strani Podatki → Sync v TV. Sync teče v brskalniku s povezano mapo izvozov iz ERP.",
+    velja: `${VELJA_PRIPRAVLJENOST_DNI} dni od objave (vsaka nova objava jih zamenja) - brez synca TV ne kaže zastarelih podatkov.`,
+    prenos: "Izvoz → PDF - krovni v planu (ali PDF posameznega krovnega v razprti vrstici). Na strani so privzete izločene skupine materiala, kot na TV.",
+  }));
 
 /** Zasedenost → Delovni plan. */
 export const tvIzpisiDelovnegaPlana = (oddelek: OddelekKoda): TvIzpis[] => [

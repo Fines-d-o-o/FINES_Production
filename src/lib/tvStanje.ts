@@ -3,7 +3,8 @@
 import { formatDatumUra, toIso } from "./dates";
 import { ODDELKI_NORMATIVA, type OddelekKoda } from "./normativi";
 import { getSupabase } from "./supabase";
-import { ODDELKI_TV, kodaDela, kodaPregleda, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
+import type { SyncDatotekaKljuc } from "./syncDatoteke";
+import { ODDELKI_TV, kodaDela, kodaPregleda, kodaPripravljenosti, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
 import type { OpraviloTv } from "./tvVrsta";
 
 /** Stanje komponente v FinOS: ali obstaja, ali je vklopljena, zadnja objava. */
@@ -59,8 +60,10 @@ export type SkupinaTv = {
   naslov: string;
   /** Plan: oddelek, ki ga objavi Sync. */
   oddelek: OddelekKoda | null;
-  /** Objavi jo uvoz Poročanega dela (brez gumba Sync). */
-  samodejno: boolean;
+  /** Objavi se sama ob uvozu teh datotek (Sync na strani Podatki); prazno = samo Shrani plan / gumb Sync. */
+  samodejno: SyncDatotekaKljuc[];
+  /** Gumb Sync na strani Sync v TV (ročna objava). */
+  rocno: boolean;
   komponente: { naslov: string; koda: string }[];
 };
 
@@ -69,7 +72,8 @@ export const SKUPINE_TV: SkupinaTv[] = [
     id: `plan:${o}`,
     naslov: `Delovni plan · ${NAZIV_ODDELKA[o]}`,
     oddelek: o,
-    samodejno: false,
+    samodejno: [],
+    rocno: true,
     komponente: [
       { naslov: "Workflow", koda: kodaWorkflowa(o) },
       { naslov: "Pregled (roki)", koda: kodaPregleda(o) },
@@ -79,15 +83,25 @@ export const SKUPINE_TV: SkupinaTv[] = [
     id: "delo",
     naslov: "Delo - prejšnji dan",
     oddelek: null,
-    samodejno: true,
+    samodejno: ["porocano"],
+    rocno: false,
     komponente: ODDELKI_TV.map((o) => ({ naslov: NAZIV_ODDELKA[o], koda: kodaDela(o) })),
   },
   {
     id: "zakljuceni",
     naslov: "Zaključeni krovni",
     oddelek: null,
-    samodejno: true,
+    samodejno: ["porocano"],
+    rocno: false,
     komponente: ODDELKI_TV.map((o) => ({ naslov: NAZIV_ODDELKA[o], koda: kodaZakljucenih(o) })),
+  },
+  {
+    id: "pripravljenost",
+    naslov: "Pripravljenost materiala",
+    oddelek: null,
+    samodejno: ["izdaje", "material", "dobave", "nalogi"],
+    rocno: true,
+    komponente: ODDELKI_TV.map((o) => ({ naslov: NAZIV_ODDELKA[o], koda: kodaPripravljenosti(o) })),
   },
 ];
 

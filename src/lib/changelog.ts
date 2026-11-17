@@ -9,6 +9,24 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "38.02",
+    datum: "17. 11. 2026",
+    spremembe: [
+      "Pripravljenost materiala: stolpec Izdelek je zamenjal stolpec Družina - glavne družine izdelkov vseh nalogov krovnega iz normativov (OCB-e, OCB-k → OCB; več družin, npr. »OCB, ODC«). V razprti vrstici so nalogi krovnega z identom in družino.",
+      "Pripravljenost materiala → izvoz: Excel in besedilo (.txt) za skupni pregled ali vse vrstice prikazanih krovnih, PDF (en list 16:9 na krovni). V razprti vrstici izvoz posameznega krovnega (PDF, Excel, besedilo). Po materialu: Excel in besedilo.",
+      "FIN:TV - nova komponenta Pripravljenost materiala (vsak oddelek svoja): za vsak krovni iz delovnega plana oddelka list z materialom, ki ni na zalogi (šifra, material, količina, naročilo, prihod, stanje), krovni z vsem materialom v hiši na zbirnem listu. Objavi se sama po uvozu izdaj, materiala, naročil ali nalogov, po Shrani plan in z gumbom Sync na strani Sync v TV; strani veljajo 3 dni. FinOS: migracija 029_fin_tv_pripravljenost_materiala.sql.",
+    ],
+  },
+  {
+    verzija: "38.01",
+    datum: "17. 11. 2026",
+    spremembe: [
+      "Nova stran Proizvodnja → Planiranje → Pripravljenost materiala: ali je ves material za krovne naloge na zalogi in kdaj pride manjkajoči. Zaloga matičnega skladišča in odprta naročila dobaviteljem se razdelijo po vrstnem redu delovnega plana (najprej nalogi z najzgodnejšim začetkom, nato ostali po roku). Zaloga ostalih skladišč se ne šteje (vidna samo informativno).",
+      "Stanja: Na zalogi, Pride pravočasno, Rok dobave zapadel, Pride prepozno (po začetku v planu), Ni naročeno - kartice so hkrati filter. Zavihek Po nalogih: krovni nalog z začetkom v planu, dnem, ko je material kompleten, in rezervo v dneh; razpre se v manjkajoč material z naročili. Zavihek Po materialu: kateri krovni čakajo na material in odprta naročila. Filter V delovnem planu / Vsi aktivni, izvoz v Excel.",
+      "Nov sync izvoz »Naročila dobavitelju« (Narocila_dobavitelju.xlsx): uvozijo se samo odprte postavke (brez okvirnih naročil). Rok dobave: potrjen → želeni → predviden. Baza: migracija 038_dobave_materiala.sql.",
+    ],
+  },
+  {
     verzija: "37.02",
     datum: "16. 11. 2026",
     spremembe: [

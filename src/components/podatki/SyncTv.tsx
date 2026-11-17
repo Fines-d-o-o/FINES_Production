@@ -11,7 +11,8 @@ import {
   type SkupinaTv,
   type StanjeTv,
 } from "@/lib/tvStanje";
-import { objaviPlanVOzadju, objaviVsePlaneVOzadju } from "@/lib/tvOpravila";
+import { objaviPlanVOzadju, objaviPripravljenostVOzadju, objaviVsePlaneVOzadju } from "@/lib/tvOpravila";
+import { SYNC_DATOTEKE } from "@/lib/syncDatoteke";
 import { useSync } from "@/components/SyncProvider";
 import { casSync } from "@/components/SyncGlava";
 import { useStanjeTv } from "@/components/TvProvider";
@@ -46,8 +47,8 @@ function SyncTvInner() {
           <h2 className="text-xl font-bold text-ink-900">Sync v TV</h2>
           <p className="text-sm text-ink-500">
             Objava komponent na televizorje FIN:TV. Delovni plan se objavi ob Shrani plan ali z gumbom Sync; Delo - prejšnji
-            dan in Zaključeni krovni se objavita sama ob uvozu Poročanega dela. Objava teče v ozadju tega zavihka - lahko
-            delaš naprej, zavihka pa ne zapiraj.
+            dan in Zaključeni krovni se objavita sama ob uvozu Poročanega dela, Pripravljenost materiala ob uvozu izdaj, materiala,
+            naročil ali nalogov. Objava teče v ozadju tega zavihka - lahko delaš naprej, zavihka pa ne zapiraj.
           </p>
         </div>
       </div>
@@ -98,7 +99,9 @@ function KvadratekSkupine({ s }: { s: SkupinaTv }) {
   const ocena = ocenaSkupine(s, tv.komponente, tv.opravila);
   const o = tv.opravila.find((x) => x.id === s.id);
   const dela = o?.stanje === "tece" || o?.stanje === "caka";
-  const porocano = sync.datoteke.find((d) => d.kljuc === "porocano");
+  // Zadnji uvoz datotek, ob katerih se skupina objavi sama
+  const uvozi = s.samodejno.map((k) => ({ naslov: SYNC_DATOTEKE[k].naslov, cas: sync.datoteke.find((d) => d.kljuc === k)?.uvozeno ?? null }));
+  const objavi = () => (s.oddelek ? objaviPlanVOzadju(s.oddelek) : s.id === "pripravljenost" ? objaviPripravljenostVOzadju("Sync v TV") : undefined);
 
   return (
     <section className={`fp-card flex flex-col gap-3 border-l-4 p-3 ${RAMKA[ocena.stanje]}`} aria-label={s.naslov}>
@@ -106,27 +109,32 @@ function KvadratekSkupine({ s }: { s: SkupinaTv }) {
         <StanjeIkona stanje={ocena.stanje} hint={ocena.opis} className="mt-0.5" />
         <div className="min-w-0 flex-1">
           <h3 className="font-bold text-ink-900">{s.naslov}</h3>
-          {s.samodejno ? (
+          {s.samodejno.length ? (
             <p className="text-xs text-ink-500">
               <span
                 className="mr-1.5 inline-block rounded-full bg-sync-500 px-2 py-0.5 text-xs font-bold text-white"
-                title="Objavi se samo ob vsakem uvozu Poročanega dela - Sync ni potreben"
+                title={`Objavi se sama ob vsakem uvozu: ${uvozi.map((u) => u.naslov).join(", ")}`}
               >
                 Samodejno ob syncu
               </span>
-              Poročano delo uvoženo: <span className="tabular-nums">{casSync(porocano?.uvozeno ?? null)}</span>
+              {uvozi.map((u, i) => (
+                <span key={u.naslov}>
+                  {i > 0 && " · "}
+                  {u.naslov}: <span className="tabular-nums">{casSync(u.cas)}</span>
+                </span>
+              ))}
             </p>
           ) : (
             <p className="text-xs text-ink-500">Workflow in pregled za vsak teden do konca plana. Objava ob Shrani plan ali s Sync.</p>
           )}
         </div>
-        {s.oddelek && (
+        {s.rocno && (
           <Button
-            hint={`Objavi delovni plan (${s.naslov.split(" · ")[1]}) na TV`}
+            hint={s.oddelek ? `Objavi delovni plan (${s.naslov.split(" · ")[1]}) na TV` : `Objavi ${s.naslov} na TV`}
             variant="sync"
             icon={o?.stanje === "tece" ? Loader2 : RefreshCw}
             disabled={dela}
-            onClick={() => s.oddelek && objaviPlanVOzadju(s.oddelek)}
+            onClick={objavi}
             className={o?.stanje === "tece" ? "[&>svg]:animate-spin" : ""}
           >
             Sync

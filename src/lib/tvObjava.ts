@@ -20,7 +20,7 @@ import type { WorkflowPlan } from "./plan";
 import { ustvariPlanPdf } from "./planPdf";
 import { ustvariPlanPregledPdf, type DruzineNormativov } from "./planPregledPdf";
 import { getSupabase } from "./supabase";
-import { ODDELKI_TV, kodaDela, kodaPregleda, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
+import { ODDELKI_TV, VELJA_PRIPRAVLJENOST_DNI, kodaDela, kodaPregleda, kodaPripravljenosti, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
 
 const KOSARA = "fos-tv-viri";
 /** Širina slike strani (4K). */
@@ -225,6 +225,47 @@ export async function objaviDeloNaTv(izvor = "uvoz poročanega dela"): Promise<{
     oddelki.push(d.naziv);
   }
   return { datum, oddelki };
+}
+
+/**
+ * "Pripravljenost materiala" na FIN:TV za vse oddelke z vklopljeno komponento: za vsak krovni iz delovnega plana oddelka
+ * stran 16:9 z materialom, ki ni na zalogi (pripravljenostPodatki.ts -> pripravljenostPdf.ts); krovni z vsem materialom
+ * v hiši na zbirni strani. Strani veljajo VELJA_PRIPRAVLJENOST_DNI dni (nova objava jih zamenja).
+ */
+export async function objaviPripravljenostNaTv(izvor = "sync"): Promise<{ oddelki: string[] }> {
+  const danes = toIso(new Date());
+  const kode: OddelekKoda[] = [];
+  for (const o of ODDELKI_TV) if (await vklopljena(kodaPripravljenosti(o))) kode.push(o);
+  if (!kode.length) return { oddelki: [] };
+  const [{ pripraviPripravljenostTv }, { ustvariPripravljenostPdf }] = await Promise.all([
+    import("./pripravljenostPodatki"),
+    import("./pripravljenostPdf"),
+  ]);
+  const zdaj = Date.now();
+  const oddelki: string[] = [];
+  for (const d of await pripraviPripravljenostTv(kode)) {
+    const koda = kodaPripravljenosti(d.koda);
+    const pdf = await ustvariPripravljenostPdf({ krovni: d.krovni, naslov: `Pripravljenost materiala · ${d.naziv}`, stanje: d.stanje });
+    const { slike, razmerja } = await pdfVSlike(pdf);
+    const strani: string[] = [];
+    for (let i = 0; i < slike.length; i++) {
+      const pot = `${koda}/${zdaj}/${danes}-${i + 1}.webp`;
+      const { error } = await getSupabase().storage.from(KOSARA).upload(pot, slike[i], { contentType: "image/webp", cacheControl: "31536000", upsert: false });
+      if (error) throw new Error(`Nalaganje strani na TV (${d.naziv}): ${error.message}`);
+      strani.push(pot);
+    }
+    const { error } = await getSupabase().rpc("fos_tv_objavi", {
+      p_koda: koda,
+      p_strani: strani,
+      p_razmerja: razmerja,
+      p_izvor: `Production: ${izvor} · ${d.naziv}`,
+      p_velja_od: strani.map(() => danes),
+      p_velja_do: strani.map(() => addDays(danes, VELJA_PRIPRAVLJENOST_DNI - 1)),
+    });
+    if (error) throw new Error(`${d.naziv}: ${error.message}`);
+    oddelki.push(`${d.naziv} (${d.krovni.length} krovnih, ${strani.length} str.)`);
+  }
+  return { oddelki };
 }
 
 /** Strani zaključenih krovnih veljajo teden dni (nova objava jih zamenja - ob vsakem uvozu poročanega dela). */

@@ -34,6 +34,9 @@ export type Normativ = {
 
 export type Druzina = { id: number; koda: string };
 
+/** Glavna družina: brez pripone različice (OCB-e, OCB-k, OCB-o -> OCB). */
+export const glavnaDruzina = (koda: string) => koda.trim().replace(/-[a-z]+$/, "");
+
 export type OddelekPolje = (typeof ODDELKI_NORMATIVA)[number]["polje"];
 const DELI: OddelekPolje[] = ODDELKI_NORMATIVA.map((o) => o.polje);
 

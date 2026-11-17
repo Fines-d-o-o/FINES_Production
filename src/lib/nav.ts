@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Bolt, BriefcaseBusiness, CalendarClock, ChartColumn, TrendingUp, BookOpen, CalendarRange, ClipboardCheck, Database, Factory, Footprints, Gauge, GitCompareArrows, GraduationCap, Grid3x3, ListOrdered, PackageCheck, PackageSearch, RefreshCw, ShieldCheck, Tv, UserCog, Warehouse } from "lucide-react";
+import { Bolt, Boxes, BriefcaseBusiness, CalendarClock, ChartColumn, TrendingUp, BookOpen, CalendarRange, ClipboardCheck, Database, Factory, Footprints, Gauge, GitCompareArrows, GraduationCap, Grid3x3, ListOrdered, PackageCheck, PackageSearch, RefreshCw, ShieldCheck, Tv, UserCog, Warehouse } from "lucide-react";
 
 export type NavItem = {
   label: string;
@@ -99,6 +99,12 @@ export const NAV: NavGroup[] = [
             href: "/proizvodnja/prioritete",
             icon: ListOrdered,
             hint: "Prioritete odprem in delovnih nalogov",
+          },
+          {
+            label: "Pripravljenost materiala",
+            href: "/proizvodnja/pripravljenost-materiala",
+            icon: Boxes,
+            hint: "Ali je material za naloge v hiši",
           },
         ],
       },

@@ -24,6 +24,22 @@ export function objaviPlanVOzadju(oddelek: OddelekKoda, { spredaj = false }: { s
     },
     { spredaj },
   );
+  // Plan določa, kateri krovni so na listih Pripravljenosti materiala in njihov začetek
+  objaviPripravljenostVOzadju("delovni plan");
+}
+
+/** "Pripravljenost materiala" - po uvozu izdaj, materiala, naročil ali nalogov, po Shrani plan in z gumbom Sync. */
+export function objaviPripravljenostVOzadju(izvor = "sync") {
+  dodajObjavoTv({
+    id: "pripravljenost",
+    naslov: "Pripravljenost materiala",
+    kode: kodeSkupine("pripravljenost"),
+    delo: async () => {
+      const { objaviPripravljenostNaTv } = await import("./tvObjava");
+      const izid = await objaviPripravljenostNaTv(izvor);
+      return izid.oddelki.length ? `Objavljeno: ${izid.oddelki.join(", ")}` : "Ni objave - komponente so izklopljene";
+    },
+  });
 }
 
 /** Plan vseh oddelkov (gumb Sync vse na strani Sync v TV in v glavi). */

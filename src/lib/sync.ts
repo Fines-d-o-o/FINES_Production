@@ -1,9 +1,11 @@
 // Uvoz izvoza iz ERP v bazo - iste funkcije za sync iz mape na serverju in ročni uvoz (stran Podatki).
 // Modul uvozi vse bralnike Excela (knjižnica xlsx), zato ga glava aplikacije naloži šele ob syncu.
 import { preberiIzdajeXlsx, preberiPrevzemeXlsx, shraniIzdajeUvoz, shraniPrevzemeUvoz } from "./doizdaja";
+import { preberiDobaveXlsx, shraniDobaveUvoz } from "./dobave";
 import { preberiMaterialXlsx, shraniMaterialUvoz } from "./material";
 import { preberiIdenteXlsx, preberiKosovniceXlsx, shraniIdenteUvoz, shraniKosovniceUvoz } from "./kosovniceUvoz";
 import type { SyncDatotekaKljuc } from "./syncDatoteke";
+import { SYNC_PRIPRAVLJENOST } from "./tvIzpisi";
 import { preberiVd200Xlsx, preberiVd300Xlsx, shraniOdpUvoz, shraniPriUvoz } from "./prioritete";
 import { preberiNalogeXlsx, shraniUvoz } from "./zasedenost";
 import { preberiPorocanoXlsx, shraniPorocanoUvoz } from "./porocanoDelo";
@@ -54,6 +56,11 @@ const UVOZ: Record<SyncDatotekaKljuc, (f: File) => Promise<RezultatUvoza>> = {
     objaviPorocanoVOzadju();
     return { opis: `${vnosov} vnosov (${vrstice.length} po dnevih, posodobljenih ${posodobljeno}) · FIN:TV se objavlja v ozadju`, opozorila };
   },
+  dobave: async (f) => {
+    const p = await preberiDobaveXlsx(f);
+    await shraniDobaveUvoz(f.name, p);
+    return { opis: `${p.dobave.length} odprtih postavk naročil`, opozorila: p.opozorila };
+  },
   izdaje: async (f) => {
     const p = await preberiIzdajeXlsx(f);
     await shraniIzdajeUvoz(f.name, p);
@@ -62,4 +69,12 @@ const UVOZ: Record<SyncDatotekaKljuc, (f: File) => Promise<RezultatUvoza>> = {
 };
 
 /** Prebere izvoz in ga shrani kot nov aktiven uvoz. */
-export const uvoziDatoteko = (kljuc: SyncDatotekaKljuc, f: File) => UVOZ[kljuc](f);
+export async function uvoziDatoteko(kljuc: SyncDatotekaKljuc, f: File) {
+  const r = await UVOZ[kljuc](f);
+  // FIN:TV "Pripravljenost materiala": objava v ozadju (več uvozov zapored -> v vrsti ostane ena objava)
+  if ((SYNC_PRIPRAVLJENOST as readonly string[]).includes(kljuc)) {
+    const { objaviPripravljenostVOzadju } = await import("./tvOpravila");
+    objaviPripravljenostVOzadju(`uvoz ${kljuc}`);
+  }
+  return r;
+}
