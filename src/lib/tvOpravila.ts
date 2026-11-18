@@ -18,7 +18,7 @@ export function objaviPlanVOzadju(oddelek: OddelekKoda, { spredaj = false }: { s
         const { objaviPlanOddelka } = await import("./tvPlan");
         const izid = await objaviPlanOddelka(oddelek, napredek);
         return izid.length
-          ? `Objavljeno: ${izid.map((d) => `${d.ime} ${tednov(d.tednov)}, ${d.strani} str.`).join(" · ")}`
+          ? `Objavljeno: ${izid.map((d) => `${d.ime} ${tednov(d.tednov)}${d.animirano ? ", animirano" : `, ${d.strani} str.`}`).join(" · ")}`
           : "Ni objave - komponenti sta izklopljeni ali plan ne sega v tekoči teden";
       },
     },

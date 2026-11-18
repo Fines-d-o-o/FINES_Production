@@ -9,6 +9,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "38.04",
+    datum: "18. 11. 2026",
+    spremembe: [
+      "FIN:TV: vse komponente (Delo - prejšnji dan, Zaključeni krovni, Pripravljenost materiala, Delovni plan, Pregled) gredo na TV kot podatki namesto slik PDF - FIN:TV jih prikaže kot animacijo za delavce (Finesek po celicah: zaskrbljen, ko zaostajamo / material manjka / rok je blizu, vesel po planu, ponosen ob nadurah).",
+      "Objave so zato veliko hitrejše (ni izdelave PDF in slik). Potrebna migracija FinOS 030; do takrat ostane objava kot prej (strani PDF). Izvozi PDF ostanejo nespremenjeni.",
+    ],
+  },
+  {
     verzija: "38.03",
     datum: "18. 11. 2026",
     spremembe: [

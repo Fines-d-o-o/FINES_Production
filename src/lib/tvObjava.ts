@@ -5,16 +5,21 @@
 // veljavnost (od - do, datum): TV kaže samo strani, ki veljajo danes.
 //
 // Delovni plan - workflow in pregled (vsak oddelek svoja komponenta za vsakega): ob "Shrani plan" se za VSAK TEDEN, za
-// katerega je plan narejen (od tekočega tedna naprej), ustvari svoj PDF; strani tedna veljajo pon - ned. TV v ponedeljek
+// katerega je plan narejen (od tekočega tedna naprej), objavijo PODATKI plana tedna (FinOS 030 - animirane scene, TV sam
+// izračuna DANES in dni do roka); brez 030 svoj PDF na teden (spodaj); strani / podatki tedna veljajo pon - ned. TV v ponedeljek
 // sam preklopi na nov teden. Workflow pokaže 2 tedna (teden + naslednji, kot privzet pogled plana); pregled ima za
 // vsak delovni dan svoje strani (oznaka DANES), strani dneva veljajo ta dan (petek do nedelje). Nova objava zamenja vse tedne naenkrat. Izklopljena / manjkajoča komponenta = nič se ne ustvari.
 //
 // Delo - prejšnji dan (vsak oddelek svoja komponenta, FinOS 027): ob vsakem uvozu Poročanega dela (Sync) se za prejšnji
-// delovni dan ustvari stran 16:9 na oddelek (deloPdf.ts); stran velja samo na dan objave.
+// delovni dan objavijo PODATKI (deloVceraj.ts -> DeloOddelka, FinOS 030 fos_tv_objavi_podatke) - FIN:TV iz njih naredi
+// animirane scene za delavce (glava Fineseka, en podatek). Velja samo na dan objave. Brez FinOS 030 stara pot: stran
+// 16:9 na oddelek (deloPdf.ts). Izvozi PDF v aplikaciji ostanejo nespremenjeni.
 //
-// Zaključeni krovni (vsak oddelek svoja komponenta, FinOS 028): ob vsakem uvozu Poročanega dela se
-// ustvari stran 16:9 na celico s krovnimi, zaključenimi v zadnjih 30 dneh (zakljuceniPdf.ts); strani veljajo 7 dni.
+// Zaključeni krovni (vsak oddelek svoja komponenta, FinOS 028): ob vsakem uvozu Poročanega dela se objavijo PODATKI
+// krovnih, zaključenih v zadnjih 30 dneh (animirane scene, FinOS 030); veljajo 7 dni. Brez 030 stran 16:9 na celico
+// (zakljuceniPdf.ts). Enako Pripravljenost materiala (podatki krovnih, brez 030 pripravljenostPdf.ts).
 import { addDays, mondayOf, prevWorkday, toIso, type IsoDate } from "./dates";
+import type { DeloOddelka } from "./deloVceraj";
 import type { OddelekKoda } from "./normativi";
 import type { WorkflowPlan } from "./plan";
 import { ustvariPlanPdf } from "./planPdf";
@@ -82,9 +87,49 @@ const DOKUMENTI: DokumentPlana[] = [
 ];
 
 /** Objavljeni dokumenti (samo vklopljene komponente, ki imajo strani). Prazno = nič objavljeno. */
-export type IzidObjave = { ime: string; tednov: number; strani: number }[];
+export type IzidObjave = { ime: string; tednov: number; strani: number; animirano?: boolean }[];
 
-type Zbirka = { dok: DokumentPlana; koda: string; mapa: string; strani: string[]; razmerja: number[]; veljaOd: IsoDate[]; veljaDo: IsoDate[]; tednov: number };
+type Zbirka = {
+  dok: DokumentPlana;
+  koda: string;
+  mapa: string;
+  strani: string[];
+  razmerja: number[];
+  /** animirana objava (FinOS 030): en element = plan enega tedna */
+  podatki: unknown[];
+  veljaOd: IsoDate[];
+  veljaDo: IsoDate[];
+  tednov: number;
+};
+
+/** Ali FinOS že ima animirane objave (030: fos_tv_objave.podatki) - sicer plan gre na TV kot strani PDF. */
+async function imaAnimirane(): Promise<boolean> {
+  const { error } = await getSupabase().from("fos_tv_objave").select("podatki").limit(1);
+  return !error;
+}
+
+/** Plan tedna za TV (oblika PlanTv v FinOS tvScene.ts - ob spremembi uskladi oba). */
+function planTv(plan: WorkflowPlan) {
+  return {
+    oddelek: plan.oddelek,
+    od: plan.od,
+    do: plan.do,
+    celice: plan.celice
+      .filter((c) => c.koraki.length)
+      .map((c) => ({
+        naziv: c.naziv,
+        koraki: c.koraki.map((k) => ({
+          krovni: k.krovni,
+          narocnik: k.narocnik,
+          od: k.od,
+          do: k.do,
+          ure: r1(k.ure),
+          brezKapacitete: r1(k.brezKapacitete),
+          prosta: k.prosta,
+        })),
+      })),
+  };
+}
 
 /** Zadnja zagnana objava po oddelku - novejši Shrani plan prekine starejšo objavo istega oddelka. */
 const zadnjaObjava = new Map<string, number>();
@@ -118,9 +163,11 @@ export async function objaviPlanNaTv({
   const zbirke: Zbirka[] = [];
   for (const dok of DOKUMENTI) {
     const koda = dok.koda(oddelek);
-    if (await vklopljena(koda)) zbirke.push({ dok, koda, mapa: `${koda}/${zdaj}`, strani: [], razmerja: [], veljaOd: [], veljaDo: [], tednov: 0 });
+    if (await vklopljena(koda)) zbirke.push({ dok, koda, mapa: `${koda}/${zdaj}`, strani: [], razmerja: [], podatki: [], veljaOd: [], veljaDo: [], tednov: 0 });
   }
   if (!zbirke.length) return [];
+  // animirano (FinOS 030): podatki plana po tednih namesto PDF - TV sam izračuna DANES in dni do roka
+  const animirano = await imaAnimirane();
 
   const tedni: IsoDate[] = [];
   for (let pon = prvi; pon <= mondayOf(zadnjiDan) && tedni.length < NAJVEC_TEDNOV; pon = addDays(pon, 7)) tedni.push(pon);
@@ -133,7 +180,8 @@ export async function objaviPlanNaTv({
       if (!plani.has(tednov)) plani.set(tednov, planTedna(Array.from({ length: tednov }, (_, w) => Array.from({ length: 5 }, (_, i) => addDays(pon, w * 7 + i))).flat()));
       return plani.get(tednov)!;
     };
-    await dodajTeden(zbirke, pon, planZa, druzine);
+    if (animirano) dodajTedenPodatki(zbirke, pon, planZa);
+    else await dodajTeden(zbirke, pon, planZa, druzine);
     // tekoči teden takoj na TV, ostali ob koncu (nova objava zamenja prejšnjo)
     if (t === 0 && tedni.length > 1 && !prekinjena()) await objavi(zbirke, nazivOddelka);
     napredek?.(t + 1, tedni.length);
@@ -170,10 +218,29 @@ async function dodajTeden(zbirke: Zbirka[], pon: IsoDate, planZa: (tednov: numbe
   }
 }
 
-/** Objava zbranih strani (vsak dokument svoja komponenta). */
+/** Teden kot podatki (animirana objava): plan tedna za vsak dokument, velja pon - ned. */
+function dodajTedenPodatki(zbirke: Zbirka[], pon: IsoDate, planZa: (tednov: number) => WorkflowPlan) {
+  for (const z of zbirke) {
+    const plan = planZa(z.dok.tednov);
+    if (!plan.celice.length) continue;
+    z.podatki.push(planTv(plan));
+    z.veljaOd.push(pon);
+    z.veljaDo.push(addDays(pon, 6));
+    z.tednov++;
+  }
+}
+
+/** Objava zbranih strani / podatkov (vsak dokument svoja komponenta). */
 async function objavi(zbirke: Zbirka[], nazivOddelka: string): Promise<IzidObjave> {
   const izid: IzidObjave = [];
   for (const z of zbirke) {
+    if (z.podatki.length) {
+      await objaviPodatke(z.koda, z.podatki, `Production: Shrani plan · ${nazivOddelka}`, z.veljaOd, z.veljaDo).catch((e: Error) => {
+        throw new Error(`${z.dok.ime}: ${e.message}`);
+      });
+      izid.push({ ime: z.dok.ime, tednov: z.tednov, strani: z.podatki.length, animirano: true });
+      continue;
+    }
     if (!z.strani.length) continue;
     const { error } = await getSupabase().rpc("fos_tv_objavi", {
       p_koda: z.koda,
@@ -191,7 +258,8 @@ async function objavi(zbirke: Zbirka[], nazivOddelka: string): Promise<IzidObjav
 
 /**
  * "Delo - prejšnji dan" na FIN:TV za vse oddelke z vklopljeno komponento: štempljane ure prejšnjega delovnega dne proti
- * planu (deloVceraj.ts -> deloPdf.ts). Stran velja samo danes - naslednji dan je komponenta prazna do novega uvoza.
+ * planu (deloVceraj.ts) kot PODATKI za animirane scene (FinOS 030; brez nje stran deloPdf.ts). Velja samo danes -
+ * naslednji dan je komponenta prazna do novega uvoza.
  * Vrne objavljene oddelke (prazno = nobena komponenta ni vklopljena ali ni dostopa do FIN:TV).
  */
 export async function objaviDeloNaTv(izvor = "uvoz poročanega dela"): Promise<{ datum: IsoDate; oddelki: string[] }> {
@@ -200,31 +268,77 @@ export async function objaviDeloNaTv(izvor = "uvoz poročanega dela"): Promise<{
   const kode: OddelekKoda[] = [];
   for (const o of ODDELKI_TV) if (await vklopljena(kodaDela(o))) kode.push(o);
   if (!kode.length) return { datum, oddelki: [] };
-  const [{ pripraviDelo }, { ustvariDeloPdf }] = await Promise.all([import("./deloVceraj"), import("./deloPdf")]);
+  const { pripraviDelo } = await import("./deloVceraj");
   const zdaj = Date.now();
   const oddelki: string[] = [];
   for (const d of await pripraviDelo(datum, kode)) {
     const koda = kodaDela(d.koda);
+    const p_izvor = `Production: ${izvor} · ${d.naziv}`;
+    // animirana objava: podatki oddelka (ure na 0,1 h - manj podatkov, enako na TV)
+    const objavljeno = await objaviPodatke(koda, [podatkiDela(d)], p_izvor, [danes], [danes]).catch((e: Error) => {
+      throw new Error(`${d.naziv}: ${e.message}`);
+    });
+    if (objavljeno) {
+      oddelki.push(d.naziv);
+      continue;
+    }
+    // FinOS 030 še ni zagnan: stran PDF kot slika (prej)
+    const { ustvariDeloPdf } = await import("./deloPdf");
     const { slike, razmerja } = await pdfVSlike(await ustvariDeloPdf(d));
     const strani: string[] = [];
     for (let i = 0; i < slike.length; i++) {
       const pot = `${koda}/${zdaj}/${datum}-${i + 1}.webp`;
-      const { error } = await getSupabase().storage.from(KOSARA).upload(pot, slike[i], { contentType: "image/webp", cacheControl: "31536000", upsert: false });
-      if (error) throw new Error(`Nalaganje strani na TV (${d.naziv}): ${error.message}`);
+      const nalozi = await getSupabase().storage.from(KOSARA).upload(pot, slike[i], { contentType: "image/webp", cacheControl: "31536000", upsert: false });
+      if (nalozi.error) throw new Error(`Nalaganje strani na TV (${d.naziv}): ${nalozi.error.message}`);
       strani.push(pot);
     }
-    const { error } = await getSupabase().rpc("fos_tv_objavi", {
+    const stara = await getSupabase().rpc("fos_tv_objavi", {
       p_koda: koda,
       p_strani: strani,
       p_razmerja: razmerja,
-      p_izvor: `Production: ${izvor} · ${d.naziv}`,
+      p_izvor,
       p_velja_od: strani.map(() => danes),
       p_velja_do: strani.map(() => danes),
     });
-    if (error) throw new Error(`${d.naziv}: ${error.message}`);
+    if (stara.error) throw new Error(`${d.naziv}: ${stara.error.message}`);
     oddelki.push(d.naziv);
   }
   return { datum, oddelki };
+}
+
+/**
+ * Animirana objava (FinOS 030): podatki za scene namesto slik strani. Vrne false, če FinOS 030 še ni zagnan (takrat
+ * klicatelj objavi strani PDF kot prej); ostale napake vrže.
+ */
+async function objaviPodatke(koda: string, podatki: unknown[], izvor: string, veljaOd: IsoDate[], veljaDo: IsoDate[]): Promise<boolean> {
+  const { error } = await getSupabase().rpc("fos_tv_objavi_podatke", { p_koda: koda, p_podatki: podatki, p_izvor: izvor, p_velja_od: veljaOd, p_velja_do: veljaDo });
+  if (!error) return true;
+  if (niFunkcije(error)) return false;
+  throw new Error(error.message);
+}
+
+/** Funkcije v bazi ni (migracija FinOS še ni zagnana) - PostgREST PGRST202. */
+const niFunkcije = (e: { code?: string; message: string }) => e.code === "PGRST202" || /could not find the function/i.test(e.message);
+
+const r1 = (x: number) => Math.round(x * 10) / 10;
+
+/** Podatki dela za TV (oblika DeloOddelka - FinOS tvScene.ts jo bere, ob spremembi uskladi oba). */
+function podatkiDela(d: DeloOddelka) {
+  return {
+    koda: d.koda,
+    naziv: d.naziv,
+    datum: d.datum,
+    celice: d.celice.map((c) => ({
+      naziv: c.naziv,
+      dodatno: c.dodatno,
+      plan: r1(c.plan),
+      ure: r1(c.ure),
+      izven: r1(c.izven),
+      rezija: r1(c.rezija),
+      osebe: c.osebe,
+      krovni: c.krovni.map((k) => ({ krovni: k.krovni, narocnik: k.narocnik, plan: r1(k.plan), ure: r1(k.ure), izvenDneva: k.izvenDneva })),
+    })),
+  };
 }
 
 /**
@@ -245,6 +359,27 @@ export async function objaviPripravljenostNaTv(izvor = "sync"): Promise<{ oddelk
   const oddelki: string[] = [];
   for (const d of await pripraviPripravljenostTv(kode)) {
     const koda = kodaPripravljenosti(d.koda);
+    const veljaDo = addDays(danes, VELJA_PRIPRAVLJENOST_DNI - 1);
+    // animirana objava (FinOS 030): krovni s stanjem materiala (oblika MaterialOddelkaTv v FinOS tvScene.ts)
+    const podatki = {
+      koda: d.koda,
+      naziv: d.naziv,
+      danes: d.danes,
+      krovni: d.krovni.map((l) => ({
+        krovni: l.k.krovni,
+        mesto: l.mesto,
+        zacetek: l.zacetek,
+        stanje: l.k.stanje,
+        kompleten: l.k.kompleten,
+        rezerva: l.k.rezerva,
+        manjkajocih: l.k.manjkajocih,
+        druzina: l.k.druzine[0] ?? null,
+      })),
+    };
+    if (await objaviPodatke(koda, [podatki], `Production: ${izvor} · ${d.naziv}`, [danes], [veljaDo]).catch((e: Error) => { throw new Error(`${d.naziv}: ${e.message}`); })) {
+      oddelki.push(`${d.naziv} (${d.krovni.length} krovnih, animirano)`);
+      continue;
+    }
     const pdf = await ustvariPripravljenostPdf({ krovni: d.krovni, naslov: `Pripravljenost materiala · ${d.naziv}`, stanje: d.stanje });
     const { slike, razmerja } = await pdfVSlike(pdf);
     const strani: string[] = [];
@@ -286,6 +421,21 @@ export async function objaviZakljuceneNaTv(izvor = "uvoz poročanega dela"): Pro
   const oddelki: string[] = [];
   for (const d of await pripraviZakljucene(kode)) {
     const koda = kodaZakljucenih(d.koda);
+    // animirana objava (FinOS 030): krovni po celicah (oblika ZakljuceniOddelkaTv v FinOS tvScene.ts)
+    const podatki = {
+      koda: d.koda,
+      naziv: d.naziv,
+      od: d.od,
+      celice: d.celice.map((c) => ({
+        naziv: c.naziv,
+        krovni: c.krovni.map((k) => ({ krovni: k.krovni, zakljucen: k.zakljucen, normUre: r1(k.normUre), ure: r1(k.ure), produktivnost: k.produktivnost === null ? null : Math.round(k.produktivnost * 1000) / 1000 })),
+      })),
+    };
+    const veljaDo = addDays(danes, VELJA_ZAKLJUCENI_DNI - 1);
+    if (await objaviPodatke(koda, [podatki], `Production: ${izvor} · ${d.naziv}`, [danes], [veljaDo]).catch((e: Error) => { throw new Error(`${d.naziv}: ${e.message}`); })) {
+      oddelki.push(d.naziv);
+      continue;
+    }
     const { slike, razmerja } = await pdfVSlike(await ustvariZakljucenePdf(d));
     const strani: string[] = [];
     for (let i = 0; i < slike.length; i++) {

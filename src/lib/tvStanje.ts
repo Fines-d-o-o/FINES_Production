@@ -24,13 +24,15 @@ export async function stanjeTvKomponent(kode: string[]): Promise<StanjeTvKompone
   if (error) throw new Error(error.message);
   const ids = (viri ?? []).map((v) => v.id as number);
   const { data: objave } = ids.length
-    ? await sb.from("fos_tv_zadnje_objave").select("id_vira, created_at, izvor, strani, velja_od, velja_do").in("id_vira", ids)
+    ? await sb.from("fos_tv_zadnje_objave").select("*").in("id_vira", ids) // * = z in brez FinOS 030 (podatki)
     : { data: [] };
   const danes = toIso(new Date());
   return kode.map((koda) => {
     const v = (viri ?? []).find((x) => x.koda === koda);
     const o = v ? (objave ?? []).find((x) => x.id_vira === v.id) : undefined;
-    const strani = (o?.strani as string[] | null) ?? [];
+    // animirana objava (FinOS 030): elementi podatkov namesto strani
+    const podatki = (o?.podatki as unknown[] | null | undefined) ?? [];
+    const strani = podatki.length ? podatki : ((o?.strani as string[] | null) ?? []);
     const od = (o?.velja_od as (string | null)[] | null) ?? [];
     const doo = (o?.velja_do as (string | null)[] | null) ?? [];
     // Stran brez veljavnosti velja vedno (kot veljavneStrani v FinOS)
