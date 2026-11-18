@@ -19,7 +19,7 @@
 // krovnih, zaključenih v zadnjih 30 dneh (animirane scene, FinOS 030); veljajo 7 dni. Brez 030 stran 16:9 na celico
 // (zakljuceniPdf.ts). Enako Pripravljenost materiala (podatki krovnih, brez 030 pripravljenostPdf.ts).
 import { addDays, mondayOf, prevWorkday, toIso, type IsoDate } from "./dates";
-import type { DeloOddelka } from "./deloVceraj";
+import { druzineNalogov, type DeloOddelka } from "./deloVceraj";
 import type { OddelekKoda } from "./normativi";
 import type { WorkflowPlan } from "./plan";
 import { ustvariPlanPdf } from "./planPdf";
@@ -108,8 +108,8 @@ async function imaAnimirane(): Promise<boolean> {
   return !error;
 }
 
-/** Plan tedna za TV (oblika PlanTv v FinOS tvScene.ts - ob spremembi uskladi oba). */
-function planTv(plan: WorkflowPlan) {
+/** Plan tedna za TV (oblika PlanTv v FinOS tvScene.ts - ob spremembi uskladi oba). Družine s planiranimi kosi koraka. */
+function planTv(plan: WorkflowPlan, druzine: DruzineNormativov) {
   return {
     oddelek: plan.oddelek,
     od: plan.od,
@@ -120,7 +120,7 @@ function planTv(plan: WorkflowPlan) {
         naziv: c.naziv,
         koraki: c.koraki.map((k) => ({
           krovni: k.krovni,
-          narocnik: k.narocnik,
+          druzine: druzineNalogov(k.nalogi.map((n) => ({ druzina: druzine.poIdentu.get(n.ident), kos: n.kos ?? 0 }))),
           od: k.od,
           do: k.do,
           ure: r1(k.ure),
@@ -180,7 +180,7 @@ export async function objaviPlanNaTv({
       if (!plani.has(tednov)) plani.set(tednov, planTedna(Array.from({ length: tednov }, (_, w) => Array.from({ length: 5 }, (_, i) => addDays(pon, w * 7 + i))).flat()));
       return plani.get(tednov)!;
     };
-    if (animirano) dodajTedenPodatki(zbirke, pon, planZa);
+    if (animirano) dodajTedenPodatki(zbirke, pon, planZa, druzine);
     else await dodajTeden(zbirke, pon, planZa, druzine);
     // tekoči teden takoj na TV, ostali ob koncu (nova objava zamenja prejšnjo)
     if (t === 0 && tedni.length > 1 && !prekinjena()) await objavi(zbirke, nazivOddelka);
@@ -219,11 +219,11 @@ async function dodajTeden(zbirke: Zbirka[], pon: IsoDate, planZa: (tednov: numbe
 }
 
 /** Teden kot podatki (animirana objava): plan tedna za vsak dokument, velja pon - ned. */
-function dodajTedenPodatki(zbirke: Zbirka[], pon: IsoDate, planZa: (tednov: number) => WorkflowPlan) {
+function dodajTedenPodatki(zbirke: Zbirka[], pon: IsoDate, planZa: (tednov: number) => WorkflowPlan, druzine: DruzineNormativov) {
   for (const z of zbirke) {
     const plan = planZa(z.dok.tednov);
     if (!plan.celice.length) continue;
-    z.podatki.push(planTv(plan));
+    z.podatki.push(planTv(plan, druzine));
     z.veljaOd.push(pon);
     z.veljaDo.push(addDays(pon, 6));
     z.tednov++;
@@ -336,7 +336,7 @@ function podatkiDela(d: DeloOddelka) {
       izven: r1(c.izven),
       rezija: r1(c.rezija),
       osebe: c.osebe,
-      krovni: c.krovni.map((k) => ({ krovni: k.krovni, narocnik: k.narocnik, plan: r1(k.plan), ure: r1(k.ure), izvenDneva: k.izvenDneva })),
+      krovni: c.krovni.map((k) => ({ krovni: k.krovni, plan: r1(k.plan), ure: r1(k.ure), izvenDneva: k.izvenDneva, druzine: k.druzine })),
     })),
   };
 }

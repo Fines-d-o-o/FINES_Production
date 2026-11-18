@@ -49,23 +49,33 @@ export function objaviVsePlaneVOzadju() {
 
 /** "Delo - prejšnji dan" in "Zaključeni krovni" - po uvozu Poročanega dela (sync.ts). */
 export function objaviPorocanoVOzadju() {
+  objaviDeloVOzadju();
+  objaviZakljuceneVOzadju();
+}
+
+/** "Delo - prejšnji dan" - po uvozu Poročanega dela in z gumbom Sync (Sync v TV). */
+export function objaviDeloVOzadju(izvor?: string) {
   dodajObjavoTv({
     id: "delo",
     naslov: "Delo - prejšnji dan",
     kode: kodeSkupine("delo"),
     delo: async () => {
       const { objaviDeloNaTv } = await import("./tvObjava");
-      const izid = await objaviDeloNaTv();
+      const izid = await objaviDeloNaTv(izvor);
       return izid.oddelki.length ? `Objavljeno za ${izid.datum}: ${izid.oddelki.join(", ")}` : "Ni objave - komponente so izklopljene";
     },
   });
+}
+
+/** "Zaključeni krovni" - po uvozu Poročanega dela in z gumbom Sync (Sync v TV). */
+export function objaviZakljuceneVOzadju(izvor?: string) {
   dodajObjavoTv({
     id: "zakljuceni",
     naslov: "Zaključeni krovni",
     kode: kodeSkupine("zakljuceni"),
     delo: async () => {
       const { objaviZakljuceneNaTv } = await import("./tvObjava");
-      const izid = await objaviZakljuceneNaTv();
+      const izid = await objaviZakljuceneNaTv(izvor);
       return izid.oddelki.length ? `Objavljeno: ${izid.oddelki.join(", ")}` : "Ni objave - komponente so izklopljene";
     },
   });

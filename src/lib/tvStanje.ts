@@ -86,7 +86,7 @@ export const SKUPINE_TV: SkupinaTv[] = [
     naslov: "Delo - prejšnji dan",
     oddelek: null,
     samodejno: ["porocano"],
-    rocno: false,
+    rocno: true,
     komponente: ODDELKI_TV.map((o) => ({ naslov: NAZIV_ODDELKA[o], koda: kodaDela(o) })),
   },
   {
@@ -94,7 +94,7 @@ export const SKUPINE_TV: SkupinaTv[] = [
     naslov: "Zaključeni krovni",
     oddelek: null,
     samodejno: ["porocano"],
-    rocno: false,
+    rocno: true,
     komponente: ODDELKI_TV.map((o) => ({ naslov: NAZIV_ODDELKA[o], koda: kodaZakljucenih(o) })),
   },
   {

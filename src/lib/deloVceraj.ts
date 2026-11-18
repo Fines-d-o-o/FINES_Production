@@ -1,7 +1,7 @@
 // "Delo - prejšnji dan" (FIN:TV): štempljane ure enega dne proti delovnemu planu po celicah, za vsak oddelek.
 // Isti izračun kot stran Zasedenost -> Produktivnost (izracunajPlanOddelka + izracunajProduktivnost), samo za en dan.
 import { addDays, toIso, type IsoDate } from "./dates";
-import { naloziNormative, type OddelekKoda } from "./normativi";
+import { glavnaDruzina, naloziNormative, type OddelekKoda } from "./normativi";
 import { naloziCelice, naloziPostavitve, naloziZaposlene, zdruziKrovne } from "./plan";
 import { naloziNalogeKrovnih, naloziPorocano } from "./porocanoDelo";
 import { izracunajPlanOddelka, izracunajProduktivnost, kljucDneva } from "./produktivnostPlana";
@@ -15,7 +15,21 @@ export type DeloKrovnega = {
   ure: number;
   /** Krovni ni planiran ta dan: delan pred planiranim začetkom / po planiranem koncu. */
   izvenDneva: "pred" | "po" | null;
+  /** Glavne družine nalogov krovnega in razpisani kosi (za FIN:TV - naročnikov je v krovnem lahko več). */
+  druzine: DruzinaKosov[];
 };
+
+export type DruzinaKosov = { d: string; kos: number };
+
+/** Glavne družine (OCB, OCA ...) in kosi nalogov, največ kosov najprej; brez družine = "Ostalo". */
+export function druzineNalogov(nalogi: { druzina: string | null | undefined; kos: number }[]): DruzinaKosov[] {
+  const m = new Map<string, number>();
+  for (const n of nalogi) {
+    const d = glavnaDruzina(n.druzina ?? "") || "Ostalo";
+    m.set(d, (m.get(d) ?? 0) + (n.kos > 0 ? n.kos : 0));
+  }
+  return [...m.entries()].map(([d, kos]) => ({ d, kos: Math.round(kos) })).sort((a, b) => b.kos - a.kos || a.d.localeCompare(b.d));
+}
 
 export type DeloCelice = {
   naziv: string;
@@ -63,6 +77,7 @@ export async function pripraviDelo(datum: IsoDate, kode: OddelekKoda[]): Promise
     const celiceOdd = celice.filter((c) => c.oddelek_id === oddelek.id);
     const krovni = zdruziKrovne(izracun, oddelek.koda);
     const narocnik = new Map(krovni.map((k) => [k.kljuc, k.narocnik]));
+    const druzine = new Map(krovni.map((k) => [k.kljuc, druzineNalogov(k.nalogi.map((n) => ({ druzina: n.normativ?.druzina, kos: n.razpisana_kolicina })))]));
     const plan = izracunajPlanOddelka({
       oddelek,
       celice: celiceOdd,
@@ -78,7 +93,7 @@ export async function pripraviDelo(datum: IsoDate, kode: OddelekKoda[]): Promise
       const krovnega = (k: string) => {
         let x = poKrovnem.get(k);
         if (!x) {
-          x = { krovni: k, narocnik: narocnik.get(k) ?? null, plan: 0, ure: 0, izvenDneva: null };
+          x = { krovni: k, narocnik: narocnik.get(k) ?? null, plan: 0, ure: 0, izvenDneva: null, druzine: druzine.get(k) ?? [] };
           poKrovnem.set(k, x);
         }
         return x;

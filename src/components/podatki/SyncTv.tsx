@@ -11,7 +11,7 @@ import {
   type SkupinaTv,
   type StanjeTv,
 } from "@/lib/tvStanje";
-import { objaviPlanVOzadju, objaviPripravljenostVOzadju, objaviVsePlaneVOzadju } from "@/lib/tvOpravila";
+import { objaviDeloVOzadju, objaviPlanVOzadju, objaviPripravljenostVOzadju, objaviVsePlaneVOzadju, objaviZakljuceneVOzadju } from "@/lib/tvOpravila";
 import { SYNC_DATOTEKE } from "@/lib/syncDatoteke";
 import { useSync } from "@/components/SyncProvider";
 import { casSync } from "@/components/SyncGlava";
@@ -101,7 +101,16 @@ function KvadratekSkupine({ s }: { s: SkupinaTv }) {
   const dela = o?.stanje === "tece" || o?.stanje === "caka";
   // Zadnji uvoz datotek, ob katerih se skupina objavi sama
   const uvozi = s.samodejno.map((k) => ({ naslov: SYNC_DATOTEKE[k].naslov, cas: sync.datoteke.find((d) => d.kljuc === k)?.uvozeno ?? null }));
-  const objavi = () => (s.oddelek ? objaviPlanVOzadju(s.oddelek) : s.id === "pripravljenost" ? objaviPripravljenostVOzadju("Sync v TV") : undefined);
+  const objavi = () =>
+    s.oddelek
+      ? objaviPlanVOzadju(s.oddelek)
+      : s.id === "pripravljenost"
+        ? objaviPripravljenostVOzadju("Sync v TV")
+        : s.id === "delo"
+          ? objaviDeloVOzadju("Sync v TV")
+          : s.id === "zakljuceni"
+            ? objaviZakljuceneVOzadju("Sync v TV")
+            : undefined;
 
   return (
     <section className={`fp-card flex flex-col gap-3 border-l-4 p-3 ${RAMKA[ocena.stanje]}`} aria-label={s.naslov}>
