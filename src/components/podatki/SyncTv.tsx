@@ -11,7 +11,7 @@ import {
   type SkupinaTv,
   type StanjeTv,
 } from "@/lib/tvStanje";
-import { objaviDeloVOzadju, objaviPlanVOzadju, objaviPripravljenostVOzadju, objaviVsePlaneVOzadju, objaviZakljuceneVOzadju } from "@/lib/tvOpravila";
+import { objaviDeloVOzadju, objaviPlanVOzadju, objaviPripravljenostVOzadju, objaviVseNaTvVOzadju, objaviZakljuceneVOzadju } from "@/lib/tvOpravila";
 import { SYNC_DATOTEKE } from "@/lib/syncDatoteke";
 import { useSync } from "@/components/SyncProvider";
 import { casSync } from "@/components/SyncGlava";
@@ -71,7 +71,7 @@ function SyncTvInner() {
             </div>
           </FilterPolje>
           <FilterPolje label="Sync">
-            <Button hint="Objavi delovni plan vseh oddelkov na TV" variant="sync" icon={RefreshCw} onClick={objaviVsePlaneVOzadju}>
+            <Button hint="Objavi na TV vse komponente: delovni plan vseh oddelkov, pripravljenost materiala, delo prejšnjega dne in zaključene krovne" variant="sync" icon={RefreshCw} onClick={objaviVseNaTvVOzadju}>
               Sync vse
             </Button>
           </FilterPolje>

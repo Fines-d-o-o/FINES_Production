@@ -42,9 +42,19 @@ export function objaviPripravljenostVOzadju(izvor = "sync") {
   });
 }
 
-/** Plan vseh oddelkov (gumb Sync vse na strani Sync v TV in v glavi). */
+/** Plan vseh oddelkov. */
 export function objaviVsePlaneVOzadju() {
   for (const s of SKUPINE_TV) if (s.oddelek) objaviPlanVOzadju(s.oddelek);
+}
+
+/**
+ * VSE komponente FIN:TV (gumb Sync vse na strani Sync v TV in v glavi): plan vseh oddelkov (s tem tudi Pripravljenost
+ * materiala), Delo - prejšnji dan in Zaključeni krovni - ne glede na to, ali so se datoteke spremenile.
+ */
+export function objaviVseNaTvVOzadju() {
+  objaviVsePlaneVOzadju();
+  objaviDeloVOzadju("Sync v TV");
+  objaviZakljuceneVOzadju("Sync v TV");
 }
 
 /** "Delo - prejšnji dan" in "Zaključeni krovni" - po uvozu Poročanega dela (sync.ts). */

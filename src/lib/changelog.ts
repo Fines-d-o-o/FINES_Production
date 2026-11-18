@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     datum: "18. 11. 2026",
     spremembe: [
       "Podatki → Sync v TV: gumb Sync tudi za »Delo - prejšnji dan« in »Zaključeni krovni« (prej samo ob uvozu poročanega dela).",
+      "FIN:TV »Sync vse« (Sync v TV in v glavi) objavi VSE komponente - plan vseh oddelkov, pripravljenost materiala, delo prejšnjega dne in zaključene krovne (prej samo plan).",
       "FIN:TV: Delo in Delovni plan pošljeta glavne družine in kose krovnega (OCB 4 kos · OCA 2 kos) namesto naročnika - krovni ima lahko naloge več naročnikov.",
     ],
   },

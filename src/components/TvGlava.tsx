@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RefreshCw, Tv } from "lucide-react";
 import { SKUPINE_TV, najhujse, napredekOpravila, ocenaSkupine, zadnjaObjavaSkupine } from "@/lib/tvStanje";
-import { objaviVsePlaneVOzadju } from "@/lib/tvOpravila";
+import { objaviVseNaTvVOzadju } from "@/lib/tvOpravila";
 import { casSync } from "./SyncGlava";
 import { useStanjeTv } from "./TvProvider";
 import { Button } from "./ui/Button";
@@ -86,7 +86,7 @@ export function TvGlava() {
             >
               Podrobnosti
             </Link>
-            <Button hint="Objavi delovni plan vseh oddelkov na TV" variant="sync" icon={RefreshCw} onClick={objaviVsePlaneVOzadju}>
+            <Button hint="Objavi na TV vse komponente: delovni plan vseh oddelkov, pripravljenost materiala, delo prejšnjega dne in zaključene krovne" variant="sync" icon={RefreshCw} onClick={objaviVseNaTvVOzadju}>
               Sync vse
             </Button>
           </div>
