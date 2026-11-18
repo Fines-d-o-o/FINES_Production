@@ -119,6 +119,25 @@ const HINT_STANJA: Record<StanjeMateriala, string> = {
 
 
 const datumTxt = (d: IsoDate | null) => (d ? formatShort(d) : "–");
+
+/** Stolpec "Pride": rok dobave iz naročila; če je že mimo, rdeče "zamuja" (material še ni prevzet). */
+function PrideCelica({ v, danes }: { v: VrsticaPotrebe; danes: IsoDate }) {
+  if (v.dobave.length === 0) return <span className="text-ink-400">–</span>;
+  if (v.rokNeznan)
+    return (
+      <span className="text-nok-600" title="Rok dobave ni potrjen in je že mimo - kdaj pride, ni znano">
+        ni znano
+      </span>
+    );
+  if (!v.rokDobave) return <span className="text-xs text-warn-700">brez roka</span>;
+  if (v.rokDobave < danes)
+    return (
+      <span className="whitespace-nowrap" title={`Rok dobave ${formatShort(v.rokDobave)} je mimo, material še ni prevzet - nov rok ni znan`}>
+        <b className="text-nok-600">zamuja</b> <span className="text-xs text-ink-500">rok {formatShort(v.rokDobave)}</span>
+      </span>
+    );
+  return <span>{formatShort(v.rokDobave)}</span>;
+}
 const kol = (n: number) => formatNum(Math.round(n * 1000) / 1000);
 
 type Podatki = PodatkiPripravljenosti;
@@ -260,7 +279,7 @@ function PripravljenostInner() {
         prenesiXlsx(
           [
             { ime: "Krovni nalogi", vrstice: vrsticeKrovnih(prikazaniKrovni, mesto) },
-            { ime: "Vse vrstice", vrstice: vseVrstice(prikazaniKrovni) },
+            { ime: "Vse vrstice", vrstice: vseVrstice(prikazaniKrovni, danes) },
           ],
           `Pripravljenost_materiala_vrstice_${danes}`,
         ),
@@ -288,7 +307,7 @@ function PripravljenostInner() {
             ...prikazaniKrovni.map((k) => ({
               naslov: `Krovni ${k.krovni}${k.druzine.length ? ` · ${k.druzine.join(", ")}` : ""}`,
               glava: glavaKrovnega(k, mesto(k)),
-              vrstice: materialKrovnega(k).length ? vrsticeMaterialaKrovnega(k) : undefined,
+              vrstice: materialKrovnega(k).length ? vrsticeMaterialaKrovnega(k, danes) : undefined,
             })),
           ],
           `Pripravljenost_materiala_vrstice_${danes}`,
@@ -338,8 +357,8 @@ function PripravljenostInner() {
           prenesiXlsx(
             [
               { ime: "Krovni", vrstice: glavaKrovnega(k, mesto(k)).map(([a, b]) => ({ Podatek: a, Vrednost: b })) },
-              { ime: "Material", vrstice: vrsticeMaterialaKrovnega(k) },
-              { ime: "Vse vrstice", vrstice: vseVrstice([k]) },
+              { ime: "Material", vrstice: vrsticeMaterialaKrovnega(k, danes) },
+              { ime: "Vse vrstice", vrstice: vseVrstice([k], danes) },
             ],
             ime,
           ),
@@ -353,7 +372,7 @@ function PripravljenostInner() {
             `Pripravljenost materiala · krovni ${k.krovni} · ${formatShort(danes)}`,
             [
               { glava: [...glavaKrovnega(k, mesto(k)), ["Stanje podatkov", brezStanja]] },
-              { naslov: "Material, ki ni na zalogi", vrstice: materialKrovnega(k).length ? vrsticeMaterialaKrovnega(k) : undefined },
+              { naslov: "Material, ki ni na zalogi", vrstice: materialKrovnega(k).length ? vrsticeMaterialaKrovnega(k, danes) : undefined },
             ],
             ime,
           ),
@@ -599,7 +618,9 @@ function PoNalogih({
       <div className="flex flex-wrap items-start gap-3">
         <p className="min-w-[min(100%,18rem)] flex-1 text-sm text-ink-600">
           <b>Material kompleten</b> je dan, ko pride zadnja potrebna dobava. <b>Rezerva</b> so dnevi od tega dne do začetka v planu
-          (negativna = zamuda). Klik na krovni nalog pokaže material, ki ni na zalogi.
+          (negativna = zamuda). »Zamuja« = potrjeni roki so mimo, material še ni prevzet (za rezervo se šteje, da pride danes); »ni znano« = del
+          materiala ni naročen ali nepotrjen (želeni) rok je že mimo. Klik na krovni nalog pokaže material, ki ni na zalogi;
+          <b> Pride</b> je rok dobave iz naročila.
         </p>
         <RazpriGumb vsi={vsi} n={krovni.length} onClick={() => setRazprti(vsi ? new Set() : new Set(krovni.map((k) => k.krovni)))} />
       </div>
@@ -675,10 +696,14 @@ function PoNalogih({
                     <td className="px-2 py-1.5 tabular-nums">
                       {k.stanje === "zaloga" ? (
                         <span className="text-ok-600">v hiši</span>
+                      ) : k.kompleten && k.zamuja ? (
+                        <b className="text-nok-600" title="Roki dobav so mimo, material še ni prevzet">
+                          zamuja
+                        </b>
                       ) : k.kompleten ? (
                         formatShort(k.kompleten)
                       ) : (
-                        <span className="text-nok-600" title="Del materiala ni naročen ali dobava nima roka">
+                        <span className="text-nok-600" title="Del materiala ni naročen, dobava nima roka ali nepotrjen rok je že mimo">
                           ni znano
                         </span>
                       )}
@@ -693,7 +718,7 @@ function PoNalogih({
                   {razprt && (
                     <tr className="border-b border-ink-200 bg-ink-100">
                       <td colSpan={10} className="px-3 py-3 sm:pl-10">
-                        <MaterialKrovnega k={k} izvoz={izvoz(k)} />
+                        <MaterialKrovnega k={k} izvoz={izvoz(k)} danes={danes} />
                       </td>
                     </tr>
                   )}
@@ -716,7 +741,7 @@ function PoNalogih({
 
 type KljucVrstice = "ident" | "naziv" | "nalog" | "potrebno" | "zaloge" | "dobave" | "manjka" | "narocila" | "pride" | "stanje";
 
-function MaterialKrovnega({ k, izvoz }: { k: KrovniPripravljenost; izvoz: IzvozFormat[] }) {
+function MaterialKrovnega({ k, izvoz, danes }: { k: KrovniPripravljenost; izvoz: IzvozFormat[]; danes: IsoDate }) {
   const vrstice = k.vrstice.filter((v) => v.stanje !== "zaloga");
   const sort = useRazvrscanje<VrsticaPotrebe, KljucVrstice>({
     ident: (v) => v.ident,
@@ -727,7 +752,7 @@ function MaterialKrovnega({ k, izvoz }: { k: KrovniPripravljenost; izvoz: IzvozF
     dobave: (v) => v.dobave.reduce((s, d) => s + d.kolicina, 0),
     manjka: (v) => v.manjka,
     narocila: (v) => v.dobave[0]?.stevilka,
-    pride: (v) => v.kompleten,
+    pride: (v) => v.rokDobave,
     stanje: (v) => -resnost(v.stanje),
   });
   const naZalogi = k.vrstice.length - vrstice.length;
@@ -791,7 +816,7 @@ function MaterialKrovnega({ k, izvoz }: { k: KrovniPripravljenost; izvoz: IzvozF
                 <SortTh sort={sort} kljuc="narocila">
                   Naročilo · dobavitelj · rok
                 </SortTh>
-                <SortTh sort={sort} kljuc="pride">
+                <SortTh sort={sort} kljuc="pride" hint="Razvrsti po roku dobave iz naročila">
                   Pride
                 </SortTh>
                 <SortTh sort={sort} kljuc="stanje">
@@ -825,7 +850,9 @@ function MaterialKrovnega({ k, izvoz }: { k: KrovniPripravljenost; izvoz: IzvozF
                       </span>
                     ))}
                   </td>
-                  <td className="px-2 py-1.5 tabular-nums">{datumTxt(v.kompleten)}</td>
+                  <td className="px-2 py-1.5 tabular-nums">
+                    <PrideCelica v={v} danes={danes} />
+                  </td>
                   <td className="px-2 py-1.5">
                     <Znacka stanje={v.stanje} />
                   </td>
@@ -1014,7 +1041,7 @@ function PodrobnostiMateriala({ m, danes }: { m: MaterialPripravljenost; danes: 
     zaloge: (v) => v.izZaloge,
     dobave: (v) => v.dobave.reduce((s, d) => s + d.kolicina, 0),
     manjka: (v) => v.manjka,
-    pride: (v) => v.kompleten,
+    pride: (v) => v.rokDobave,
     stanje: (v) => -resnost(v.stanje),
   });
 
@@ -1103,7 +1130,7 @@ function PodrobnostiMateriala({ m, danes }: { m: MaterialPripravljenost; danes: 
                 <SortTh sort={sortN} kljuc="manjka" desno>
                   Ni naročeno
                 </SortTh>
-                <SortTh sort={sortN} kljuc="pride">
+                <SortTh sort={sortN} kljuc="pride" hint="Razvrsti po roku dobave iz naročila">
                   Pride
                 </SortTh>
                 <SortTh sort={sortN} kljuc="stanje">
@@ -1123,7 +1150,9 @@ function PodrobnostiMateriala({ m, danes }: { m: MaterialPripravljenost; danes: 
                   <td className="px-2 py-1.5 text-right tabular-nums">
                     {v.manjka > 0 ? <b className="text-nok-600">{kol(v.manjka)}</b> : <span className="text-ink-300">0</span>}
                   </td>
-                  <td className="px-2 py-1.5 tabular-nums">{datumTxt(v.kompleten)}</td>
+                  <td className="px-2 py-1.5 tabular-nums">
+                    <PrideCelica v={v} danes={danes} />
+                  </td>
                   <td className="px-2 py-1.5">
                     <Znacka stanje={v.stanje} />
                   </td>

@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { formatShort, type IsoDate } from "./dates";
 import { KRATKA_VRSTA_ROKA } from "./dobave";
 import { asciiIme, prenesiDatoteko } from "./prenos";
-import { OPIS_STANJA_MAT, materialKrovnega, naslednjaDobava, type KrovniPripravljenost, type MaterialPripravljenost } from "./pripravljenost";
+import { OPIS_STANJA_MAT, kompletenTxt, materialKrovnega, prihodTxt, naslednjaDobava, type KrovniPripravljenost, type MaterialPripravljenost } from "./pripravljenost";
 
 type Celica = string | number | null;
 type Vrstice = Record<string, Celica>[];
@@ -32,13 +32,13 @@ export const vrsticeKrovnih = (krovni: KrovniPripravljenost[], mesto: MestoKrovn
     Nalogov: k.nalogi.length,
     "Ni na zalogi": k.manjkajocih,
     "Vrstic materiala": k.vrstice.length,
-    "Material kompleten": k.stanje === "zaloga" ? "v hiši" : k.kompleten ? dat(k.kompleten) : "ni znano",
+    "Material kompleten": kompletenTxt(k, dat),
     "Rezerva (dni)": k.rezerva,
     Stanje: OPIS_STANJA_MAT[k.stanje],
   }));
 
 /** Vse vrstice materiala (nalog × ident) prikazanih krovnih, tudi tiste na zalogi. */
-export const vseVrstice = (krovni: KrovniPripravljenost[]): Vrstice =>
+export const vseVrstice = (krovni: KrovniPripravljenost[], danes: IsoDate): Vrstice =>
   krovni.flatMap((k) =>
     k.vrstice.map((v) => ({
       Krovni: k.krovni,
@@ -52,13 +52,13 @@ export const vseVrstice = (krovni: KrovniPripravljenost[]): Vrstice =>
       "Z dobave": kol(v.dobave.reduce((s, d) => s + d.kolicina, 0)),
       "Ni naročeno": kol(v.manjka),
       Naročila: v.dobave.map((d) => `${d.stevilka} ${d.dobavitelj ?? ""} ${d.rok ? formatShort(d.rok) : "brez roka"}`).join("; "),
-      Pride: v.stanje === "zaloga" ? "na zalogi" : dat(v.kompleten),
+      Pride: prihodTxt({ ...v, imaDobave: v.dobave.length > 0 }, danes, formatShort),
       Stanje: OPIS_STANJA_MAT[v.stanje],
     })),
   );
 
 /** Material krovnega po identu (kot na PDF / TV). */
-export const vrsticeMaterialaKrovnega = (k: KrovniPripravljenost): Vrstice =>
+export const vrsticeMaterialaKrovnega = (k: KrovniPripravljenost, danes: IsoDate): Vrstice =>
   materialKrovnega(k).map((m) => ({
     Ident: m.ident,
     Material: m.naziv,
@@ -70,7 +70,7 @@ export const vrsticeMaterialaKrovnega = (k: KrovniPripravljenost): Vrstice =>
     Naročila: m.narocila
       .map((d) => `${d.stevilka} ${d.dobavitelj ?? ""} ${kol(d.kolicina)} ${d.rok ? formatShort(d.rok) : "brez roka"}${d.vrsta_roka ? ` (${KRATKA_VRSTA_ROKA[d.vrsta_roka]})` : ""}`)
       .join("; "),
-    Prihod: dat(m.prihod),
+    Prihod: prihodTxt({ ...m, imaDobave: m.narocila.length > 0 }, danes, formatShort),
     Stanje: OPIS_STANJA_MAT[m.stanje],
   }));
 
@@ -100,7 +100,7 @@ export const glavaKrovnega = (k: KrovniPripravljenost, mesto: string): [string, 
   ["Družina", druzineTxt(k) || "-"],
   ["Nalogi", k.nalogi.map((n) => `${n.st_naloga}${n.koda_artikla ? ` (${n.koda_artikla})` : ""}`).join(", ")],
   ["Začetek v planu", k.zacetek ? `${formatShort(k.zacetek)}${mesto ? ` · ${mesto}` : ""}` : "ni v planu"],
-  ["Material kompleten", k.stanje === "zaloga" ? "ves material je v hiši" : k.kompleten ? formatShort(k.kompleten) : "ni znano"],
+  ["Material kompleten", kompletenTxt(k, formatShort, "ves material je v hiši")],
   ["Rezerva", k.rezerva === null ? "-" : `${k.rezerva > 0 ? "+" : ""}${k.rezerva} dni`],
   ["Stanje", OPIS_STANJA_MAT[k.stanje]],
 ];

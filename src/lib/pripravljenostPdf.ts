@@ -6,7 +6,7 @@ import { formatShort, type IsoDate } from "./dates";
 import { KRATKA_VRSTA_ROKA } from "./dobave";
 import { asciiIme, prenesiDatoteko } from "./prenos";
 import { BELA, GLAVA_TABELE, SIVA, TEMNA, glavaStrani, noga, novDokument, zaobljen, type Pisave } from "./porociloPdf";
-import { OPIS_STANJA_MAT, materialKrovnega, type MaterialKrovnega, type StanjeMateriala } from "./pripravljenost";
+import { OPIS_STANJA_MAT, kompletenTxt, materialKrovnega, type MaterialKrovnega, type StanjeMateriala } from "./pripravljenost";
 import type { KrovniNaListu } from "./pripravljenostPodatki";
 import { formatNum } from "./stevila";
 
@@ -109,7 +109,7 @@ function glavaKrovnega(s: PDFPage, f: Pisave, l: KrovniNaListu, yVrh: number, na
   zaobljen(s, kx, yVrh - kartH, kartW, kartH, 8, b.ton, ROB_KARTICE);
   s.drawRectangle({ x: kx, y: yVrh - kartH, width: 5, height: kartH, color: b.polna });
   s.drawText("MATERIAL KOMPLETEN", { x: kx + 18, y: yVrh - 18, size: 8.5, font: f.polkrepka, color: SIVA });
-  const kompleten = k.stanje === "zaloga" ? "v hiši" : k.kompleten ? datumTxt(k.kompleten) : "ni znano";
+  const kompleten = kompletenTxt(k, datumTxt);
   s.drawText(kompleten, { x: kx + 18, y: yVrh - 50, size: 28, font: f.krepka, color: b.besedilo });
   if (k.rezerva !== null && k.stanje !== "zaloga") {
     const r = k.rezerva < 0 ? `zamuda ${dni(-k.rezerva)}` : `rezerva ${dni(k.rezerva)}`;
@@ -160,11 +160,18 @@ function vrsticaMateriala(s: PDFPage, f: Pisave, m: MaterialKrovnega, y: number,
   }
 
   // prihod: datum + vrsta roka (zadnje naročilo)
-  if (m.prihod) {
+  // prihod je najmanj danes - če je rok dobave še prej, dobava zamuja (nov rok ni znan)
+  if (m.rokDobave && m.prihod && m.rokDobave < m.prihod) {
+    s.drawText("zamuja", { x: c.prihod.x + PAD, y: y - 15, size: 14, font: f.krepka, color: BARVA.ni_naroceno.besedilo });
+    s.drawText(`rok ${datumTxt(m.rokDobave)}`, { x: c.prihod.x + PAD, y: y - 26, size: 8, font: f.navadna, color: SIVA });
+  } else if (m.prihod) {
     const b = m.stanje === "prepozno" || m.stanje === "zapadel" ? BARVA[m.stanje].besedilo : TEMNA;
     s.drawText(datumTxt(m.prihod), { x: c.prihod.x + PAD, y: y - 15, size: 14, font: f.krepka, color: b });
     const zadnji = [...n].reverse().find((d) => d.rok);
     if (zadnji?.vrsta_roka) s.drawText(KRATKA_VRSTA_ROKA[zadnji.vrsta_roka], { x: c.prihod.x + PAD, y: y - 26, size: 8, font: f.navadna, color: SIVA });
+  } else if (m.rokNeznan && m.rokDobave) {
+    s.drawText("ni znano", { x: c.prihod.x + PAD, y: y - 15, size: 12, font: f.lezeca, color: BARVA.ni_naroceno.besedilo });
+    s.drawText(`nepotrjen rok ${datumTxt(m.rokDobave)}`, { x: c.prihod.x + PAD, y: y - 26, size: 8, font: f.navadna, color: SIVA });
   } else {
     s.drawText("ni znano", { x: c.prihod.x + PAD, y: t, size: 12, font: f.lezeca, color: BARVA.ni_naroceno.besedilo });
   }

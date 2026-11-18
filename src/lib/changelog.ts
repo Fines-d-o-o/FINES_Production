@@ -9,6 +9,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "38.03",
+    datum: "18. 11. 2026",
+    spremembe: [
+      "Pripravljenost materiala: stolpec Pride kaže rok dobave iz naročila. Če je rok že mimo in material še ni prevzet, piše rdeče »zamuja« z izvirnim rokom (prej je bil prikazan današnji datum). Enako v izvozu, PDF in FIN:TV (stolpec Prihod).",
+      "Pripravljenost materiala: naročilo z vpisanim delovnim nalogom (postavka naročila) najprej pokrije ta nalog, ostanek je prost za ostale naloge (prej ga je lahko porabil nalog z zgodnejšim začetkom v planu).",
+      "Pripravljenost materiala: nepotrjen rok dobave (želeni ali predviden), ki je že mimo, se šteje kot »ni znano« - tudi Material kompleten krovnega je takrat »ni znano«. Material kompleten pokaže »zamuja«, ko so vsi potrjeni roki mimo in material še ni prevzet.",
+    ],
+  },
+  {
     verzija: "38.02",
     datum: "17. 11. 2026",
     spremembe: [

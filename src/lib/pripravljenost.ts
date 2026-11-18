@@ -63,8 +63,15 @@ export type VrsticaPotrebe = {
   manjka: number;
   /** Začetek naloga v planu (najzgodnejša postavitev); null = ni v planu. */
   zacetek: IsoDate | null;
-  /** Dan, ko je material za to vrstico v hiši (danes = na zalogi); null = ni naročeno ali dobava brez roka. */
+  /**
+   * Dan, ko je material za to vrstico v hiši - za izračun rezerve (danes = na zalogi; zamujena dobava ne more
+   * priti pred danes, zato je tudi takrat danes); null = ni naročeno ali dobava brez roka.
+   */
   kompleten: IsoDate | null;
+  /** Najkasnejši rok dobav, ki pokrivajo vrstico, kot je v naročilu (lahko že mimo); null = brez dobav ali brez roka. */
+  rokDobave: IsoDate | null;
+  /** Nepotrjen rok (želeni ali predviden) je že mimo - kdaj pride, ni znano. */
+  rokNeznan: boolean;
   stanje: StanjeMateriala;
 };
 
@@ -97,6 +104,8 @@ export type KrovniPripravljenost = {
   manjkajocih: number;
   /** Ves material v hiši (null = ni znano - ni naročeno ali dobava brez roka). */
   kompleten: IsoDate | null;
+  /** Material bi moral biti že v hiši (vsi roki dobav so mimo), a še ni prevzet - kompleten je takrat danes. */
+  zamuja: boolean;
   /** Koledarski dnevi od dneva, ko je material kompleten, do začetka (+ rezerva, - zamuda); null = ni znano. */
   rezerva: number | null;
   stanje: StanjeMateriala;
@@ -175,7 +184,9 @@ export function skupineMateriala(izdaje: IzdajaVrstica[]) {
  * 2. Začetek naloga = najzgodnejša postavitev v delovnem planu, ki ga vključuje (postavitev brez izbire nalogov
  *    vključuje vse naloge krovnega). Nalogi v planu so prvi po začetku, za njimi ostali po roku izdelave.
  * 3. Po tem vrstnem redu se za vsak material razdeli zaloga matičnega skladišča (zaloga ostalih skladišč se ne šteje),
- *    nato odprte postavke naročil po roku dobave (najprej najzgodnejše). Kar ostane, ni naročeno.
+ *    nato naročila, oddana za ta delovni nalog (postavka naročila ima vpisan nalog), nato ostale odprte postavke
+ *    po roku dobave (najprej najzgodnejše). Naročilo za drug aktiven nalog najprej pokrije tisti nalog, ostanek
+ *    je prost. Kar ostane, ni naročeno.
  * 4. Stanje vrstice: vse z zaloge = na zalogi; dobava z rokom po začetku = prepozno; dobava z rokom pred danes
  *    = zapadel; ostalo pride pravočasno. Material krovnega je kompleten na najkasnejši rok dobave njegovih vrstic.
  */
@@ -250,6 +261,8 @@ export function izracunajPripravljenost({
       manjka: 0,
       zacetek: zacetekNaloga.get(v.st_naloga)?.datum ?? null,
       kompleten: null,
+      rokDobave: null,
+      rokNeznan: false,
       stanje: "zaloga",
     });
   }
@@ -290,7 +303,27 @@ export function izracunajPripravljenost({
     const zalogaZacetna = zaloga;
     const dobaveIdenta = dobavePoIdentu.get(ident) ?? [];
     const ostanek = dobaveIdenta.map((d) => d.odprto);
-    let di = 0;
+    const vzemi = (p: VrsticaPotrebe, i: number, kolicina: number) => {
+      const d = dobaveIdenta[i];
+      const o = p.dobave.find((x) => x.stevilka === d.stevilka && x.rok === d.rok);
+      if (o) o.kolicina += kolicina;
+      else p.dobave.push({ stevilka: d.stevilka, dobavitelj: d.naziv_dobavitelja, rok: d.rok, vrsta_roka: d.vrsta_roka, kolicina });
+      ostanek[i] -= kolicina;
+    };
+
+    // Rezervacije: naročilo z vpisanim delovnim nalogom najprej pokrije ta nalog (kar ne pokrije zaloga)
+    const potrebeNaloga = new Map(xs.map((p) => [p.st_naloga, p]));
+    const rezervirano = new Map<VrsticaPotrebe, [number, number][]>();
+    for (let i = 0; i < dobaveIdenta.length; i++) {
+      const dn = dobaveIdenta[i].delovni_nalog;
+      const p = dn ? potrebeNaloga.get(dn) : undefined;
+      if (!p) continue;
+      const ze = (rezervirano.get(p) ?? []).reduce((s, [, q]) => s + q, 0);
+      const q = Math.min(ostanek[i], p.potrebno - ze);
+      if (q <= EPS) continue;
+      ostanek[i] -= q;
+      rezervirano.set(p, [...(rezervirano.get(p) ?? []), [i, q]]);
+    }
 
     for (const p of xs) {
       let rest = p.potrebno;
@@ -298,19 +331,30 @@ export function izracunajPripravljenost({
       p.izZaloge = iz;
       zaloga -= iz;
       rest -= iz;
-      while (rest > EPS && di < dobaveIdenta.length) {
-        const vzami = Math.min(ostanek[di], rest);
+      // lastne rezervacije (nepotreben del se vrne med proste)
+      for (const [i, q] of rezervirano.get(p) ?? []) {
+        ostanek[i] += q;
+        const vzami = Math.min(q, rest);
         if (vzami > EPS) {
-          const d = dobaveIdenta[di];
-          p.dobave.push({ stevilka: d.stevilka, dobavitelj: d.naziv_dobavitelja, rok: d.rok, vrsta_roka: d.vrsta_roka, kolicina: vzami });
-          ostanek[di] -= vzami;
+          vzemi(p, i, vzami);
           rest -= vzami;
         }
-        if (ostanek[di] <= EPS) di++;
+      }
+      for (let i = 0; i < dobaveIdenta.length && rest > EPS; i++) {
+        const vzami = Math.min(ostanek[i], rest);
+        if (vzami > EPS) {
+          vzemi(p, i, vzami);
+          rest -= vzami;
+        }
       }
       p.manjka = rest > EPS ? rest : 0;
 
       // ---- 4. stanje vrstice
+      const roki = p.dobave.map((d) => d.rok);
+      const brezRoka = roki.some((r) => r === null);
+      p.rokDobave = brezRoka ? null : roki.reduce<IsoDate | null>((a, r) => maxDatum(a, r), null);
+      // Nepotrjen rok, ki je že mimo, ne pove ničesar - kdaj pride, ni znano
+      p.rokNeznan = p.dobave.some((d) => d.rok !== null && d.rok < danes && d.vrsta_roka !== "potrjen");
       if (p.manjka > 0) {
         p.stanje = "ni_naroceno";
         p.kompleten = null;
@@ -318,14 +362,9 @@ export function izracunajPripravljenost({
         p.stanje = "zaloga";
         p.kompleten = danes;
       } else {
-        const roki = p.dobave.map((d) => d.rok);
-        const brezRoka = roki.some((r) => r === null);
         // Zapadla dobava (rok mimo, ni prevzeta) ne more priti pred danes
-        const prihod = maxDatum(
-          roki.reduce<IsoDate | null>((a, r) => maxDatum(a, r), null),
-          danes,
-        );
-        p.kompleten = brezRoka ? null : prihod;
+        const prihod = maxDatum(p.rokDobave, danes);
+        p.kompleten = brezRoka || p.rokNeznan ? null : prihod;
         if (p.zacetek && prihod && prihod > p.zacetek) p.stanje = "prepozno";
         else if (roki.some((r) => r !== null && r < danes)) p.stanje = "zapadel";
         else p.stanje = "pride";
@@ -406,6 +445,7 @@ export function izracunajPripravljenost({
       vrstice,
       manjkajocih: vrstice.filter((v) => v.stanje !== "zaloga").length,
       kompleten,
+      zamuja: kompleten === danes && vrstice.some((v) => v.rokDobave !== null && v.rokDobave < danes),
       rezerva: kompleten && prvi ? razlikaDni(kompleten, prvi.datum) : null,
       stanje,
     });
@@ -434,8 +474,12 @@ export type MaterialKrovnega = {
   manjka: number;
   /** Naročila (združena po številki in roku). */
   narocila: DelDobave[];
-  /** Ko je ves material identa v hiši (danes = na zalogi); null = ni znano. */
+  /** Ko je ves material identa v hiši (danes = na zalogi ali zamuja); null = ni znano. */
   prihod: IsoDate | null;
+  /** Najkasnejši rok dobave iz naročil (lahko že mimo = zamuja); null = brez dobav ali brez roka. */
+  rokDobave: IsoDate | null;
+  /** Nepotrjen rok je že mimo - kdaj pride, ni znano. */
+  rokNeznan: boolean;
   stanje: StanjeMateriala;
 };
 
@@ -445,7 +489,7 @@ export function materialKrovnega(k: KrovniPripravljenost, { samoManjkajoci = tru
     if (samoManjkajoci && v.stanje === "zaloga") continue;
     let m = poIdentu.get(v.ident);
     if (!m) {
-      m = { ident: v.ident, naziv: v.naziv, em: v.em, potrebno: 0, izZaloge: 0, naDobavi: 0, manjka: 0, narocila: [], prihod: null, stanje: "zaloga", neznano: false };
+      m = { ident: v.ident, naziv: v.naziv, em: v.em, potrebno: 0, izZaloge: 0, naDobavi: 0, manjka: 0, narocila: [], prihod: null, rokDobave: null, rokNeznan: false, stanje: "zaloga", neznano: false };
       poIdentu.set(v.ident, m);
     }
     m.potrebno += v.potrebno;
@@ -459,12 +503,15 @@ export function materialKrovnega(k: KrovniPripravljenost, { samoManjkajoci = tru
     }
     if (v.kompleten === null) m.neznano = true;
     else m.prihod = maxDatum(m.prihod, v.kompleten);
+    m.rokDobave = maxDatum(m.rokDobave, v.rokDobave);
+    if (v.rokNeznan) m.rokNeznan = true;
     m.stanje = slabse(m.stanje, v.stanje);
   }
   return [...poIdentu.values()]
     .map(({ neznano, ...m }) => ({
       ...m,
       prihod: neznano ? null : m.prihod,
+      rokDobave: m.rokDobave,
       narocila: m.narocila.sort((a, b) => (a.rok ?? "9999").localeCompare(b.rok ?? "9999")),
     }))
     .sort(
@@ -474,6 +521,27 @@ export function materialKrovnega(k: KrovniPripravljenost, { samoManjkajoci = tru
         a.ident.localeCompare(b.ident, "sl", { numeric: true }),
     );
 }
+
+/**
+ * Kdaj pride material vrstice (besedilo): rok dobave iz naročila; če je že mimo, "zamuja" (material še ni prevzet,
+ * novega roka ne poznamo).
+ */
+export function prihodTxt(
+  v: { stanje: StanjeMateriala; rokDobave: IsoDate | null; rokNeznan: boolean; manjka: number; imaDobave: boolean },
+  danes: IsoDate,
+  datum: (d: IsoDate) => string,
+) {
+  if (v.stanje === "zaloga") return "na zalogi";
+  if (!v.imaDobave) return v.manjka > 0 ? "ni naročeno" : "–";
+  if (v.rokNeznan) return "ni znano (nepotrjen rok je mimo)";
+  if (!v.rokDobave) return "brez roka";
+  if (v.rokDobave < danes) return `zamuja (rok ${datum(v.rokDobave)})`;
+  return datum(v.rokDobave);
+}
+
+/** "Material kompleten" krovnega (besedilo). */
+export const kompletenTxt = (k: KrovniPripravljenost, datum: (d: IsoDate) => string, vHisi = "v hiši") =>
+  k.stanje === "zaloga" ? vHisi : !k.kompleten ? "ni znano" : k.zamuja ? "zamuja" : datum(k.kompleten);
 
 /** Prvi rok dobave v prihodnosti (za prikaz "naslednja dobava"). */
 export const naslednjaDobava = (dobave: Dobava[], danes: IsoDate) =>
