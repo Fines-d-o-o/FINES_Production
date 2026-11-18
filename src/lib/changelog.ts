@@ -9,13 +9,19 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "38.05",
+    datum: "18. 11. 2026",
+    spremembe: [
+      "Podatki → Sync v TV: gumb Sync tudi za »Delo - prejšnji dan« in »Zaključeni krovni« (prej samo ob uvozu poročanega dela).",
+      "FIN:TV: Delo in Delovni plan pošljeta glavne družine in kose krovnega (OCB 4 kos · OCA 2 kos) namesto naročnika - krovni ima lahko naloge več naročnikov.",
+    ],
+  },
+  {
     verzija: "38.04",
     datum: "18. 11. 2026",
     spremembe: [
       "FIN:TV: vse komponente (Delo - prejšnji dan, Zaključeni krovni, Pripravljenost materiala, Delovni plan, Pregled) gredo na TV kot podatki namesto slik PDF - FIN:TV jih prikaže kot animacijo za delavce (Finesek po celicah: zaskrbljen, ko zaostajamo / material manjka / rok je blizu, vesel po planu, ponosen ob nadurah).",
       "Objave so zato veliko hitrejše (ni izdelave PDF in slik). Potrebna migracija FinOS 030; do takrat ostane objava kot prej (strani PDF). Izvozi PDF ostanejo nespremenjeni.",
-      "Podatki → Sync v TV: gumb Sync tudi za »Delo - prejšnji dan« in »Zaključeni krovni« (prej samo ob uvozu poročanega dela).",
-      "FIN:TV: Delo in Delovni plan pošljeta glavne družine in kose krovnega (namesto naročnika).",
     ],
   },
   {
