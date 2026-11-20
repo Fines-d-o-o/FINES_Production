@@ -4,7 +4,9 @@ import { addDays, fromIso, type IsoDate } from "./dates";
 import type { Dobava, VrstaRoka } from "./dobave";
 import type { IzdajaVrstica } from "./doizdaja";
 import type { Material } from "./material";
+import type { RocniVrstniRed } from "./materialVrstniRed";
 import type { Postavitev } from "./plan";
+import type { NalogDodelitev } from "./prioritete";
 import type { Nalog } from "./zasedenost";
 
 // =====================================================================
@@ -30,6 +32,31 @@ export const OPIS_STANJA_MAT: Record<StanjeMateriala, string> = {
   prepozno: "Pride prepozno",
   ni_naroceno: "Ni naročeno",
 };
+
+/**
+ * Imena in razlage stolpcev količin (zaslon, Excel / TXT, PDF) - povsod enaka.
+ * Velja: Še za izdati = Pokrije zaloga + Čaka dobavo + Manjka.
+ */
+export const STOLPCI_KOLICIN = {
+  potrebno: {
+    ime: "Še za izdati",
+    opis: "Količina, ki jo nalog še potrebuje iz skladišča (planirano na nalogu - že izdano).",
+  },
+  zaloge: {
+    ime: "Pokrije zaloga",
+    opis: "Del, ki ga pokrije zaloga matičnega skladišča - kar ostane, ko zalogo vzamejo nalogi z višjo prioriteto (tudi drugi krovni).",
+  },
+  dobave: {
+    ime: "Čaka dobavo",
+    opis: "Del, ki je naročen pri dobavitelju in še ni v hiši - kdaj pride, je v stolpcu Pride.",
+  },
+  manjka: {
+    ime: "Manjka",
+    opis: "Ni na zalogi in ni naročeno - treba naročiti.",
+  },
+} as const;
+
+export const LEGENDA_KOLICIN = `${STOLPCI_KOLICIN.potrebno.ime} = ${STOLPCI_KOLICIN.zaloge.ime} + ${STOLPCI_KOLICIN.dobave.ime} + ${STOLPCI_KOLICIN.manjka.ime}`;
 
 /** Resnost stanja (višje = slabše) - stanje skupine je najslabše stanje vrstic. */
 const RESNOST: Record<StanjeMateriala, number> = { zaloga: 0, pride: 1, zapadel: 2, prepozno: 3, ni_naroceno: 4 };
@@ -82,8 +109,19 @@ export type NalogPotrebe = {
   naziv: string | null;
   /** Glavna družina izdelka iz normativov (OCB-e -> OCB); null = izdelek nima normativa / družine. */
   druzina: string | null;
+  /** Odprta količina naloga (razpisano - izdelano); null = nalog ni v uvozu nalogov. */
+  kos: number | null;
+  narocnik: string | null;
   rok: IsoDate | null;
   zacetek: IsoDate | null;
+  /** Naročila (odpreme), ki jih nalog pokrije - kot na Prioritetah / Zamudah dobav, po datumu odpreme. */
+  odpreme: NalogDodelitev[];
+  /** Najzgodnejša odprema naloga; null = nalog dela na zalogo (brez naročila). */
+  prvaOdprema: IsoDate | null;
+  /** Mesto naloga v krovnem pri razdelitvi materiala (1 = prvi dobi material). */
+  vrstniRed: number;
+  /** Mesto po privzetem vrstnem redu (plan, nato najzgodnejša odprema). */
+  privzetiRed: number;
   vrstice: VrsticaPotrebe[];
 };
 
@@ -97,7 +135,10 @@ export type KrovniPripravljenost = {
   oddelek_id: number | null;
   delovno_mesto_id: number | null;
   rok: IsoDate | null;
+  /** Nalogi po vrstnem redu za material (prvi dobi material prvi). */
   nalogi: NalogPotrebe[];
+  /** Ročno nastavljen vrstni red za material (velja namesto privzetega); null = privzeti. */
+  rocniRed: RocniVrstniRed | null;
   /** Vse neizdane vrstice nalogov (brez izločenih skupin). */
   vrstice: VrsticaPotrebe[];
   /** Vrstice, ki niso na zalogi. */
@@ -181,8 +222,12 @@ export function skupineMateriala(izdaje: IzdajaVrstica[]) {
 
 /**
  * 1. Potreba: za vsak aktiven nalog (izvoz izdaj) neizdana količina materiala ("Za izdajo"), brez izločenih skupin.
- * 2. Začetek naloga = najzgodnejša postavitev v delovnem planu, ki ga vključuje (postavitev brez izbire nalogov
- *    vključuje vse naloge krovnega). Nalogi v planu so prvi po začetku, za njimi ostali po roku izdelave.
+ * 2. Prioriteta naloga: začetek v delovnem planu (najzgodnejša postavitev, ki ga vključuje; postavitev brez izbire
+ *    nalogov vključuje vse naloge krovnega), nato najzgodnejša odprema, ki jo nalog pokrije (ista razdelitev naročil
+ *    kot na Prioritetah / v Zamudah dobav), nalogi brez odpreme (na zalogo) zadnji, nato številka naloga.
+ *    Rok izdelave iz ERP se ne upošteva (je samo okviren). Nalogi, ki niso v planu, so za vsemi v planu.
+ *    Ročni vrstni red krovnega (vrstniRed) nalogom krovnega zamenja mesta - krovni ostane na istem mestu med
+ *    ostalimi krovnimi, znotraj njega pa material dobijo nalogi v ročnem vrstnem redu.
  * 3. Po tem vrstnem redu se za vsak material razdeli zaloga matičnega skladišča (zaloga ostalih skladišč se ne šteje),
  *    nato naročila, oddana za ta delovni nalog (postavka naročila ima vpisan nalog), nato ostale odprte postavke
  *    po roku dobave (najprej najzgodnejše). Naročilo za drug aktiven nalog najprej pokrije tisti nalog, ostanek
@@ -198,6 +243,8 @@ export function izracunajPripravljenost({
   dobave,
   izlocene,
   druzine = new Map(),
+  odpremeNalogov = new Map(),
+  vrstniRed = new Map(),
   danes,
 }: {
   izdaje: IzdajaVrstica[];
@@ -208,6 +255,10 @@ export function izracunajPripravljenost({
   izlocene: Set<string>;
   /** Ident izdelka -> glavna družina (normativi). */
   druzine?: Map<string, string>;
+  /** Delovni nalog -> naročila (odpreme), ki jih pokrije (dodelitveNalogov). */
+  odpremeNalogov?: Map<string, NalogDodelitev[]>;
+  /** Krovni -> ročni vrstni red nalogov za material. */
+  vrstniRed?: Map<string, RocniVrstniRed>;
   danes: IsoDate;
 }): Pripravljenost {
   const { skupine, klasifikati } = skupineMateriala(izdaje);
@@ -267,12 +318,35 @@ export function izracunajPripravljenost({
     });
   }
 
-  // Prioriteta: v planu po začetku, nato ostali po roku izdelave, nato številka naloga
+  // ---- 2. prioriteta: začetek v planu, nato najzgodnejša odprema, nato številka naloga
   const rokNaloga = (st: string) => nalogPodatki.get(st)?.rok_izdelave ?? podatkiNaloga.get(st)?.rok_izdelave ?? null;
-  const prioriteta = (a: VrsticaPotrebe, b: VrsticaPotrebe) =>
-    (a.zacetek ?? "9999").localeCompare(b.zacetek ?? "9999") ||
-    (rokNaloga(a.st_naloga) ?? "9999").localeCompare(rokNaloga(b.st_naloga) ?? "9999") ||
-    a.st_naloga.localeCompare(b.st_naloga, "sl", { numeric: true });
+  const prvaOdprema = (st: string) => odpremeNalogov.get(st)?.find((d) => d.datum)?.datum ?? null;
+  type Kljuc = { zacetek: string; odprema: string; st: string };
+  const primerjaj = (a: Kljuc, b: Kljuc) =>
+    a.zacetek.localeCompare(b.zacetek) || a.odprema.localeCompare(b.odprema) || a.st.localeCompare(b.st, "sl", { numeric: true });
+  const vsiNalogi = new Set<string>(podatkiNaloga.keys());
+  for (const p of potrebe.values()) vsiNalogi.add(p.st_naloga);
+  const privzeti = new Map<string, Kljuc>(
+    [...vsiNalogi].map((st) => [st, { zacetek: zacetekNaloga.get(st)?.datum ?? "9999", odprema: prvaOdprema(st) ?? "9999", st }]),
+  );
+  // Ročni vrstni red: nalogi krovnega si v ročnem vrstnem redu razdelijo mesta (ključe) svojih nalogov
+  const efektivni = new Map(privzeti);
+  const aktivniKrovnega = new Map<string, Set<string>>();
+  for (const st of vsiNalogi) {
+    const k = krovniNaloga(st);
+    if (!aktivniKrovnega.has(k)) aktivniKrovnega.set(k, new Set());
+    aktivniKrovnega.get(k)!.add(st);
+  }
+  for (const [krovni, red] of vrstniRed) {
+    const aktivni = aktivniKrovnega.get(krovni);
+    if (!aktivni) continue;
+    const izbrani = [...new Set(red.nalogi)].filter((st) => aktivni.has(st));
+    const mesta = izbrani.map((st) => privzeti.get(st)!).sort(primerjaj);
+    izbrani.forEach((st, i) => efektivni.set(st, mesta[i]));
+  }
+  const rang = new Map([...vsiNalogi].sort((a, b) => primerjaj(efektivni.get(a)!, efektivni.get(b)!)).map((st, i) => [st, i]));
+  const rangNaloga = (st: string) => rang.get(st) ?? Number.MAX_SAFE_INTEGER;
+  const prioriteta = (a: VrsticaPotrebe, b: VrsticaPotrebe) => rangNaloga(a.st_naloga) - rangNaloga(b.st_naloga);
 
   const poIdentu = new Map<string, VrsticaPotrebe[]>();
   for (const p of potrebe.values()) {
@@ -411,9 +485,10 @@ export function izracunajPripravljenost({
   for (const [krovni, vrstice] of poKrovnem) {
     const stNalogov = new Set<string>(vrstice.map((v) => v.st_naloga));
     for (const st of podatkiNaloga.keys()) if (krovniNaloga(st) === krovni) stNalogov.add(st);
+    const poPrivzetem = [...stNalogov].sort((a, b) => primerjaj(privzeti.get(a)!, privzeti.get(b)!));
     const nalogiK: NalogPotrebe[] = [...stNalogov]
-      .sort((a, b) => a.localeCompare(b, "sl", { numeric: true }))
-      .map((st) => {
+      .sort((a, b) => rangNaloga(a) - rangNaloga(b))
+      .map((st, i) => {
         const n = nalogPodatki.get(st);
         const iz = podatkiNaloga.get(st);
         const koda = n?.koda_artikla ?? iz?.koda_artikla ?? null;
@@ -423,8 +498,14 @@ export function izracunajPripravljenost({
           koda_artikla: koda,
           druzina: (koda && druzine.get(koda)) || null,
           naziv: n?.naziv_artikla ?? iz?.naziv_artikla ?? iz?.opis ?? null,
+          kos: n ? Math.max(0, n.razpisana_kolicina - n.izdelana_kolicina) : null,
+          narocnik: n?.narocnik ?? null,
           rok: rokNaloga(st),
           zacetek: zacetekNaloga.get(st)?.datum ?? null,
+          odpreme: odpremeNalogov.get(st) ?? [],
+          prvaOdprema: prvaOdprema(st),
+          vrstniRed: i + 1,
+          privzetiRed: poPrivzetem.indexOf(st) + 1,
           vrstice: vrstice.filter((v) => v.st_naloga === st),
         };
       });
@@ -442,6 +523,7 @@ export function izracunajPripravljenost({
       delovno_mesto_id: prvi?.delovno_mesto_id ?? null,
       rok: roki[0] ?? null,
       nalogi: nalogiK,
+      rocniRed: vrstniRed.get(krovni) ?? null,
       vrstice,
       manjkajocih: vrstice.filter((v) => v.stanje !== "zaloga").length,
       kompleten,

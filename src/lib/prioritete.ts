@@ -1129,6 +1129,24 @@ export function odpremePoNalogih(
   odpreme: Odprema[],
   material: Map<string, Material>,
 ): Map<string, IsoDate[]> {
+  return new Map(
+    [...dodelitveNalogov(postavke, nalogi, odpreme, material)].map(([st, d]) => [
+      st,
+      [...new Set(d.flatMap((x) => (x.datum ? [x.datum] : [])))].sort(),
+    ]),
+  );
+}
+
+/**
+ * Naročila (odpreme), ki jih pokrije posamezen delovni nalog - ista FIFO razdelitev kot na Prioritetah in v Zamudah
+ * dobav (brez nepotrjenih naročil), po datumu odpreme. Nalog brez dodelitev dela na zalogo.
+ */
+export function dodelitveNalogov(
+  postavke: Postavka[],
+  nalogi: Nalog[],
+  odpreme: Odprema[],
+  material: Map<string, Material>,
+): Map<string, NalogDodelitev[]> {
   const r = izracunajPrioritete(
     postavke,
     nalogi,
@@ -1137,7 +1155,7 @@ export function odpremePoNalogih(
     material,
   );
   return new Map(
-    r.nalogi.map((n) => [n.st_naloga, [...new Set(n.dodelitve.flatMap((d) => (d.datum ? [d.datum] : [])))].sort()]),
+    r.nalogi.map((n) => [n.st_naloga, [...n.dodelitve].sort((a, b) => (a.datum ?? "9999").localeCompare(b.datum ?? "9999"))]),
   );
 }
 

@@ -3,8 +3,10 @@ import { formatDatumUra, todayWorkday, type IsoDate } from "./dates";
 import { naloziDobave, type Dobava } from "./dobave";
 import { naloziIzdaje, privzeteIzlocene, type IzdajaVrstica } from "./doizdaja";
 import { naloziMaterial, type Material } from "./material";
+import { naloziVrstniRed, niTabeleVrstnegaReda, type RocniVrstniRed } from "./materialVrstniRed";
 import { glavnaDruzina, naloziNormative, type Normativ, type OddelekKoda } from "./normativi";
 import { naloziCelice, naloziPostavitve, type Celica, type Postavitev } from "./plan";
+import { dodelitveNalogov, naloziZadnjiOdpUvoz, naloziZadnjiPriUvoz, type NalogDodelitev } from "./prioritete";
 import { izracunajPripravljenost, skupineMateriala, type KrovniPripravljenost, type Pripravljenost } from "./pripravljenost";
 import { naloziZadnjiUvoz, naloziZasOddelke, type Nalog, type ZasOddelek } from "./zasedenost";
 
@@ -13,7 +15,7 @@ const niTabel = (m: string) => /fp_mat_dobave|does not exist|schema cache/i.test
 
 /** Vsi viri naenkrat; manjkajoč uvoz ne ustavi strani (izračun je takrat le delen). */
 export async function naloziPodatkePripravljenosti() {
-  const [izd, mat, nal, postavitve, oddelki, celice, normativi] = await Promise.all([
+  const [izd, mat, nal, postavitve, oddelki, celice, normativi, pri, odp, vrstniRed] = await Promise.all([
     naloziIzdaje().catch(() => ({ uvoz: null, vrstice: [] as IzdajaVrstica[] })),
     naloziMaterial().catch(() => ({ uvoz: null, material: new Map<string, Material>() })),
     naloziZadnjiUvoz().catch(() => ({ uvoz: null, nalogi: [] as Nalog[] })),
@@ -21,7 +23,21 @@ export async function naloziPodatkePripravljenosti() {
     naloziZasOddelke().catch(() => [] as ZasOddelek[]),
     naloziCelice(todayWorkday()).catch(() => [] as Celica[]),
     naloziNormative(true).catch(() => [] as Normativ[]),
+    naloziZadnjiPriUvoz().catch(() => null),
+    naloziZadnjiOdpUvoz().catch(() => ({ odpreme: [] })),
+    // brez tabele (migracija 039) velja privzeti vrstni red; ostale napake se pokažejo
+    naloziVrstniRed().then(
+      (x) => ({ vrstniRed: x, niTabele: false }),
+      (e: Error) => {
+        if (!niTabeleVrstnegaReda(e.message)) throw e;
+        return { vrstniRed: new Map<string, RocniVrstniRed>(), niTabele: true };
+      },
+    ),
   ]);
+  // Naročila, ki jih pokrije posamezen nalog (kot na Prioritetah / v Zamudah dobav) - za vrstni red materiala
+  const odpremeNalogov = pri?.uvoz
+    ? dodelitveNalogov(pri.postavke, nal.nalogi, odp.odpreme, mat.material)
+    : new Map<string, NalogDodelitev[]>();
   const dob = await naloziDobave().then(
     (x) => ({ ...x, niTabel: false }),
     (e: Error) => {
@@ -29,7 +45,21 @@ export async function naloziPodatkePripravljenosti() {
       return { uvoz: null, dobave: [] as Dobava[], niTabel: true };
     },
   );
-  return { izd, mat, nal, postavitve, oddelki, celice, dob, druzine: druzineIzdelkov(normativi) };
+  return {
+    izd,
+    mat,
+    nal,
+    postavitve,
+    oddelki,
+    celice,
+    dob,
+    druzine: druzineIzdelkov(normativi),
+    odpremeNalogov,
+    /** Brez uvoza naročil (VD200) ni odprem po nalogih - vrstni red je takrat samo po planu in številki naloga. */
+    brezOdprem: !pri?.uvoz,
+    vrstniRed: vrstniRed.vrstniRed,
+    niTabeleVrstnegaReda: vrstniRed.niTabele,
+  };
 }
 export type PodatkiPripravljenosti = Awaited<ReturnType<typeof naloziPodatkePripravljenosti>>;
 
@@ -48,6 +78,8 @@ export function izracunaj(p: PodatkiPripravljenosti, izlocene: string[] | null, 
     dobave: p.dob.dobave,
     izlocene: new Set(izlocene ?? privzeteIzlocene(skupine, klasifikati)),
     druzine: p.druzine,
+    odpremeNalogov: p.odpremeNalogov,
+    vrstniRed: p.vrstniRed,
     danes,
   });
 }

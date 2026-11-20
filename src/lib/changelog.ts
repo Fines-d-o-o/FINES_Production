@@ -9,6 +9,25 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "39.01",
+    datum: "20. 11. 2026",
+    spremembe: [
+      "Pripravljenost materiala: nov vrstni red razdelitve zaloge in dobav - med krovnimi po začetku v delovnem planu, znotraj krovnega po najzgodnejši odpremi naloga (ista razdelitev naročil kot pri Zamudah dobav), nalogi brez odpreme zadnji. Rok izdelave iz ERP se ne upošteva več (prej je pri enakem začetku odločala številka naloga).",
+      "Nov gumb »Prioritete za material« pri razprtem krovnem (levo od izvoza): seznam nalogov krovnega z nazivom, izdelkom, kosi, prvo odpremo, začetkom in stanjem materiala; klik na stanje pokaže ves material naloga (tudi pokrit z zalogo).",
+      "V oknu lahko spremeniš vrstni red nalogov (puščici ali vpis mesta) - predogled materiala se preračuna sproti, »prej:« pokaže spremembo. Shranjen vrstni red velja samo za material (odpreme in plan ostanejo), je uraden za vse (stran, izvozi, FIN:TV) do »Resetiraj prioritete«. Krovni z ročnim vrstnim redom ima oznako »ročni red«, na PDF / TV je zapisano.",
+      "Potrebna migracija 039_material_vrstni_red.sql (do takrat deluje samo predogled).",
+    ],
+  },
+  {
+    verzija: "38.06",
+    datum: "20. 11. 2026",
+    spremembe: [
+      "Pripravljenost materiala: jasnejša imena stolpcev količin - Še za izdati (prej Potrebno), Pokrije zaloga (prej Z zaloge), Čaka dobavo (prej Z dobave), Manjka (prej Ni naročeno). Velja Še za izdati = Pokrije zaloga + Čaka dobavo + Manjka.",
+      "Pod tabelo materiala krovnega je legenda z razlago vsakega stolpca, razlaga je tudi v namigu glave stolpca. Enaka imena so v izvozu Excel / TXT.",
+      "PDF in FIN:TV: stolpec KOLIČINA je razdeljen na ČAKA DOBAVO (naročeno, še ni v hiši) in MANJKA (ni naročeno - treba naročiti), na dnu strani je legenda.",
+    ],
+  },
+  {
     verzija: "38.05",
     datum: "18. 11. 2026",
     spremembe: [

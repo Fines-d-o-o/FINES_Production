@@ -1,12 +1,12 @@
 // PDF "Pripravljenost materiala" (izvoz in FIN:TV): stran 16:9 na krovni nalog - velika lista materiala, ki ni na zalogi
-// (šifra, material, količina, naročilo, prihod, stanje). Krovni, ki imajo ves material v hiši, so na zbirni strani
+// (šifra, material, čaka dobavo, manjka, naročilo, prihod, stanje). Krovni, ki imajo ves material v hiši, so na zbirni strani
 // (TV ne vrti praznih strani). Preveč vrstic za eno stran -> nadaljevanje na naslednji. Oblika: porociloPdf.ts.
 import { rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 import { formatShort, type IsoDate } from "./dates";
 import { KRATKA_VRSTA_ROKA } from "./dobave";
 import { asciiIme, prenesiDatoteko } from "./prenos";
 import { BELA, GLAVA_TABELE, SIVA, TEMNA, glavaStrani, noga, novDokument, zaobljen, type Pisave } from "./porociloPdf";
-import { OPIS_STANJA_MAT, kompletenTxt, materialKrovnega, type MaterialKrovnega, type StanjeMateriala } from "./pripravljenost";
+import { OPIS_STANJA_MAT, STOLPCI_KOLICIN, kompletenTxt, materialKrovnega, type MaterialKrovnega, type StanjeMateriala } from "./pripravljenost";
 import type { KrovniNaListu } from "./pripravljenostPodatki";
 import { formatNum } from "./stevila";
 
@@ -63,7 +63,7 @@ const datumTxt = (d: IsoDate) => formatShort(d);
 
 /** Stolpci tabele materiala (x = levi rob, w = širina). */
 const STOLPCI = (() => {
-  const sirine = { sifra: 122, kolicina: 96, narocilo: 150, prihod: 112, stanje: 142 };
+  const sirine = { sifra: 118, dobava: 92, manjka: 78, narocilo: 146, prihod: 108, stanje: 136 };
   const material = W - 2 * ROB - Object.values(sirine).reduce((a, b) => a + b, 0);
   let x = ROB;
   const st = (w: number) => {
@@ -74,7 +74,8 @@ const STOLPCI = (() => {
   return {
     sifra: st(sirine.sifra),
     material: st(material),
-    kolicina: st(sirine.kolicina),
+    dobava: st(sirine.dobava),
+    manjka: st(sirine.manjka),
     narocilo: st(sirine.narocilo),
     prihod: st(sirine.prihod),
     stanje: st(sirine.stanje),
@@ -102,7 +103,7 @@ function glavaKrovnega(s: PDFPage, f: Pisave, l: KrovniNaListu, yVrh: number, na
     s.drawText(t, { x: ROB + wk + 20, y: yVrh - 44, size: 26, font: f.krepka, color: hex("#ca5010") });
   }
   const zacetek = l.zacetek ? `Začetek v planu: ${datumTxt(l.zacetek)}${l.mesto ? ` · ${l.mesto}` : ""}` : "Ni v delovnem planu";
-  const pod = `${zacetek} · ${nalogov(k.nalogi.length)}${nadaljevanje}`;
+  const pod = `${zacetek} · ${nalogov(k.nalogi.length)}${k.rocniRed ? " · ročni vrstni red za material" : ""}${nadaljevanje}`;
   s.drawText(skrajsaj(pod, f.navadna, 12, kx - ROB - 16), { x: ROB, y: yVrh - 66, size: 12, font: f.navadna, color: SIVA });
 
   // desno: kartica stanja
@@ -126,7 +127,8 @@ function glavaTabele(s: PDFPage, f: Pisave, y: number) {
   const c = STOLPCI;
   s.drawText("ŠIFRA", { x: c.sifra.x + PAD, y: t, size: 9, font: f.polkrepka, color: BELA });
   s.drawText("MATERIAL", { x: c.material.x + PAD, y: t, size: 9, font: f.polkrepka, color: BELA });
-  desno(s, "KOLIČINA", c.kolicina.x + c.kolicina.w - PAD, t, 9, f.polkrepka, BELA);
+  desno(s, STOLPCI_KOLICIN.dobave.ime.toUpperCase(), c.dobava.x + c.dobava.w - PAD, t, 9, f.polkrepka, BELA);
+  desno(s, STOLPCI_KOLICIN.manjka.ime.toUpperCase(), c.manjka.x + c.manjka.w - PAD, t, 9, f.polkrepka, BELA);
   s.drawText("NAROČILO", { x: c.narocilo.x + PAD, y: t, size: 9, font: f.polkrepka, color: BELA });
   s.drawText("PRIHOD", { x: c.prihod.x + PAD, y: t, size: 9, font: f.polkrepka, color: BELA });
   s.drawText("STANJE", { x: c.stanje.x + PAD, y: t, size: 9, font: f.polkrepka, color: BELA });
@@ -141,13 +143,17 @@ function vrsticaMateriala(s: PDFPage, f: Pisave, m: MaterialKrovnega, y: number,
   s.drawText(m.ident, { x: c.sifra.x + PAD, y: t, size: 14, font: f.polkrepka, color: TEMNA });
   s.drawText(skrajsaj(m.naziv ?? "", f.navadna, 14, c.material.w - 2 * PAD), { x: c.material.x + PAD, y: t, size: 14, font: f.navadna, color: TEMNA });
 
-  // količina, ki ni z zaloge (z dobave + ni naročeno)
-  const k = kol(m.naDobavi + m.manjka);
+  // količini, ki nista z zaloge: naročeno (čaka dobavo) in ni naročeno (manjka); 0 = siv pomišljaj
   const em = m.em ? ` ${m.em}` : "";
-  const xK = c.kolicina.x + c.kolicina.w - PAD;
   const wEm = em ? f.navadna.widthOfTextAtSize(em, 10) : 0;
-  if (em) s.drawText(em, { x: xK - wEm, y: t, size: 10, font: f.navadna, color: SIVA });
-  desno(s, k, xK - wEm, t, 14, f.krepka, TEMNA);
+  const kolicina = (n: number, st: { x: number; w: number }, barva: RGB) => {
+    const xK = st.x + st.w - PAD;
+    if (n <= 0) return desno(s, "–", xK, t, 14, f.navadna, SIVA);
+    if (em) s.drawText(em, { x: xK - wEm, y: t, size: 10, font: f.navadna, color: SIVA });
+    desno(s, kol(n), xK - wEm, t, 14, f.krepka, barva);
+  };
+  kolicina(m.naDobavi, c.dobava, TEMNA);
+  kolicina(m.manjka, c.manjka, BARVA.ni_naroceno.besedilo);
 
   // naročilo: številka (+ "+n" ob več naročilih), dobavitelj pod njo
   const n = m.narocila;
@@ -207,6 +213,11 @@ function straniKrovnega(pdf: Awaited<ReturnType<typeof novDokument>>["pdf"], f: 
       const naZalogi = new Set(l.k.vrstice.filter((v) => v.stanje === "zaloga").map((v) => v.ident)).size;
       if (i === listov - 1 && naZalogi)
         s.drawText(`+ ${naZalogi} materialov na zalogi (ni na seznamu)`, { x: ROB + PAD, y: y - 14, size: 9, font: f.lezeca, color: SIVA });
+      // legenda količin (seštevek vseh nalogov krovnega)
+      s.drawText(
+        `Količine za vse naloge krovnega, ki jih zaloga ne pokrije: ${STOLPCI_KOLICIN.dobave.ime.toUpperCase()} = naročeno pri dobavitelju, še ni v hiši · ${STOLPCI_KOLICIN.manjka.ime.toUpperCase()} = ni na zalogi in ni naročeno (treba naročiti)`,
+        { x: ROB, y: ROB + 14, size: 7.5, font: f.navadna, color: SIVA },
+      );
     }
     s.drawText(stanje, { x: ROB, y: ROB + 2, size: 7.5, font: f.navadna, color: SIVA });
   }

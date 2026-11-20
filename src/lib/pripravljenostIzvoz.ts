@@ -3,7 +3,16 @@ import * as XLSX from "xlsx";
 import { formatShort, type IsoDate } from "./dates";
 import { KRATKA_VRSTA_ROKA } from "./dobave";
 import { asciiIme, prenesiDatoteko } from "./prenos";
-import { OPIS_STANJA_MAT, kompletenTxt, materialKrovnega, prihodTxt, naslednjaDobava, type KrovniPripravljenost, type MaterialPripravljenost } from "./pripravljenost";
+import {
+  OPIS_STANJA_MAT,
+  STOLPCI_KOLICIN as K,
+  kompletenTxt,
+  materialKrovnega,
+  prihodTxt,
+  naslednjaDobava,
+  type KrovniPripravljenost,
+  type MaterialPripravljenost,
+} from "./pripravljenost";
 
 type Celica = string | number | null;
 type Vrstice = Record<string, Celica>[];
@@ -47,10 +56,10 @@ export const vseVrstice = (krovni: KrovniPripravljenost[], danes: IsoDate): Vrst
       Ident: v.ident,
       Material: v.naziv,
       EM: v.em,
-      Potrebno: kol(v.potrebno),
-      "Z zaloge": kol(v.izZaloge),
-      "Z dobave": kol(v.dobave.reduce((s, d) => s + d.kolicina, 0)),
-      "Ni naročeno": kol(v.manjka),
+      [K.potrebno.ime]: kol(v.potrebno),
+      [K.zaloge.ime]: kol(v.izZaloge),
+      [K.dobave.ime]: kol(v.dobave.reduce((s, d) => s + d.kolicina, 0)),
+      [K.manjka.ime]: kol(v.manjka),
       Naročila: v.dobave.map((d) => `${d.stevilka} ${d.dobavitelj ?? ""} ${d.rok ? formatShort(d.rok) : "brez roka"}`).join("; "),
       Pride: prihodTxt({ ...v, imaDobave: v.dobave.length > 0 }, danes, formatShort),
       Stanje: OPIS_STANJA_MAT[v.stanje],
@@ -63,10 +72,10 @@ export const vrsticeMaterialaKrovnega = (k: KrovniPripravljenost, danes: IsoDate
     Ident: m.ident,
     Material: m.naziv,
     EM: m.em,
-    Potrebno: kol(m.potrebno),
-    "Z zaloge": kol(m.izZaloge),
-    "Z dobave": kol(m.naDobavi),
-    "Ni naročeno": kol(m.manjka),
+    [K.potrebno.ime]: kol(m.potrebno),
+    [K.zaloge.ime]: kol(m.izZaloge),
+    [K.dobave.ime]: kol(m.naDobavi),
+    [K.manjka.ime]: kol(m.manjka),
     Naročila: m.narocila
       .map((d) => `${d.stevilka} ${d.dobavitelj ?? ""} ${kol(d.kolicina)} ${d.rok ? formatShort(d.rok) : "brez roka"}${d.vrsta_roka ? ` (${KRATKA_VRSTA_ROKA[d.vrsta_roka]})` : ""}`)
       .join("; "),
@@ -82,12 +91,12 @@ export const vrsticeMateriala = (material: MaterialPripravljenost[], danes: IsoD
       Material: m.naziv,
       Skupina: m.skupina,
       EM: m.em,
-      Potrebno: kol(m.potrebno),
+      [K.potrebno.ime]: kol(m.potrebno),
       "Zaloga (matično)": kol(m.zaloga),
       "Zaloga ostalo (ne šteje)": kol(m.zalogaOstalo),
       "Naročeno (ERP)": m.narocenoErp,
       "Naročeno (postavke)": kol(m.narocenoPostavke),
-      Manjka: kol(m.manjka),
+      [K.manjka.ime]: kol(m.manjka),
       "Naslednja dobava": nasl?.rok ? formatShort(nasl.rok) : "",
       "Krovni nalogi": m.krovni.join(", "),
       Stanje: OPIS_STANJA_MAT[m.stanje],

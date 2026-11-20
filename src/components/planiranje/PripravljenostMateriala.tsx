@@ -1,14 +1,16 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, ClipboardList, Columns3 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Columns3, ListOrdered, RotateCcw } from "lucide-react";
 import { formatShort, todayWorkday, type IsoDate } from "@/lib/dates";
 import { KRATKA_VRSTA_ROKA, OPIS_VRSTE_ROKA, type Dobava, type VrstaRoka } from "@/lib/dobave";
 import { privzeteIzlocene, skupinaSKlasifikatom } from "@/lib/doizdaja";
 import { ujemaIskanje } from "@/lib/iskanje";
 import {
+  LEGENDA_KOLICIN,
   OPIS_STANJA_MAT,
   STANJA,
+  STOLPCI_KOLICIN,
   materialKrovnega,
   naslednjaDobava,
   skupineMateriala,
@@ -16,6 +18,7 @@ import {
   slabse,
   type KrovniPripravljenost,
   type MaterialPripravljenost,
+  type NalogPotrebe,
   type StanjeMateriala,
   type VrsticaPotrebe,
 } from "@/lib/pripravljenost";
@@ -30,6 +33,8 @@ import {
 } from "@/lib/pripravljenostIzvoz";
 import { izracunaj, naloziPodatkePripravljenosti, stanjePodatkov, type KrovniNaListu, type PodatkiPripravljenosti } from "@/lib/pripravljenostPodatki";
 import { NAZIV_ODDELKA } from "@/lib/tvStanje";
+import { resetirajVrstniRed, shraniVrstniRed } from "@/lib/materialVrstniRed";
+import { kratkoIme } from "@/lib/prioritete";
 import { tvIzpisiPripravljenosti } from "@/lib/tvIzpisi";
 import { formatNum } from "@/lib/stevila";
 import { supabaseConfigured } from "@/lib/supabase";
@@ -37,6 +42,7 @@ import { Button } from "@/components/ui/Button";
 import { FilterKartica, type KarticaBarva } from "@/components/ui/FilterKartica";
 import { FilterIskanje, FilterPolje, FilterPreklopnik, FilterVrstica } from "@/components/ui/Filtri";
 import { Izvoz, type IzvozFormat } from "@/components/ui/Izvoz";
+import { Modal } from "@/components/ui/Modal";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import { ConfigMissing, Loading, WarningText } from "@/components/ui/Notice";
 import { SortTh, TabelaOkvir, useRazvrscanje } from "@/components/ui/Tabela";
@@ -202,7 +208,24 @@ function PripravljenostInner() {
     [podatki, izlocene, danes],
   );
 
-  if (!podatki) return <Loading />;
+  // Prioritete za material: predogled krovnega z drugim vrstnim redom (null = privzeti) in osvežitev po shranjevanju
+  const prioritete = useMemo<PovezavaPrioritet | null>(
+    () =>
+      podatki && {
+        preracunaj: (krovni, red) => {
+          const vrstniRed = new Map(podatki.vrstniRed);
+          if (red) vrstniRed.set(krovni, { nalogi: red, spremenil: null, cas: "" });
+          else vrstniRed.delete(krovni);
+          return izracunaj({ ...podatki, vrstniRed }, izlocene, danes).krovni.find((x) => x.krovni === krovni) ?? null;
+        },
+        nalozi,
+        niTabele: podatki.niTabeleVrstnegaReda,
+        brezOdprem: podatki.brezOdprem,
+      },
+    [podatki, izlocene, danes, nalozi],
+  );
+
+  if (!podatki || !prioritete) return <Loading />;
 
   const imeOddelka = new Map(podatki.oddelki.map((o) => [o.id, o.naziv]));
   const imeCelice = new Map(podatki.celice.map((c) => [c.id, c.naziv]));
@@ -503,15 +526,16 @@ function PripravljenostInner() {
             />
           </FilterVrstica>
           <p className="text-xs text-ink-500">
-            Zaloga matičnega skladišča in odprta naročila se razdelijo po vrstnem redu: najprej nalogi v planu po začetku, nato ostali
-            po roku izdelave. Zaloga ostalih skladišč se ne šteje. Rok dobave: potrjen → želeni → predviden.
+            Zaloga matičnega skladišča in odprta naročila se razdelijo po vrstnem redu nalogov: najprej po začetku v delovnem planu,
+            znotraj krovnega po najzgodnejši odpremi naloga (kot pri Zamudah dobav; nalogi brez odpreme zadnji) ali po ročnem vrstnem
+            redu (Prioritete za material). Zaloga ostalih skladišč se ne šteje. Rok dobave: potrjen → želeni → predviden.
           </p>
         </div>
       </div>
 
       {/* ============ VSEBINA ============ */}
       {nast.pogled === "nalogi" ? (
-        <PoNalogih krovni={prikazaniKrovni} mesto={mesto} danes={danes} izvoz={izvozKrovnega} />
+        <PoNalogih krovni={prikazaniKrovni} mesto={mesto} danes={danes} izvoz={izvozKrovnega} prioritete={prioritete} />
       ) : (
         <PoMaterialu material={prikazaniMaterial} danes={danes} />
       )}
@@ -593,11 +617,13 @@ function PoNalogih({
   mesto: mestoKrovnega,
   danes,
   izvoz,
+  prioritete,
 }: {
   krovni: KrovniPripravljenost[];
   mesto: (k: KrovniPripravljenost) => string;
   danes: IsoDate;
   izvoz: (k: KrovniPripravljenost) => IzvozFormat[];
+  prioritete: PovezavaPrioritet;
 }) {
   const { razprti, setRazprti, preklopi } = useRazprti();
   const sort = useRazvrscanje<KrovniPripravljenost, KljucKrovnega>({
@@ -673,7 +699,10 @@ function PoNalogih({
                     <td className="px-1 py-1.5 text-ink-500">
                       {razprt ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
                     </td>
-                    <td className="px-2 py-1.5 font-mono font-semibold">{k.krovni}</td>
+                    <td className="px-2 py-1.5 font-mono font-semibold">
+                      {k.krovni}
+                      {k.rocniRed && <ZnackaRocniRed />}
+                    </td>
                     <td className="px-2 py-1.5 font-semibold" title="Glavne družine izdelkov na nalogih krovnega (normativi)">
                       {k.druzine.length ? k.druzine.join(", ") : <span className="font-normal text-ink-400">–</span>}
                     </td>
@@ -718,7 +747,7 @@ function PoNalogih({
                   {razprt && (
                     <tr className="border-b border-ink-200 bg-ink-100">
                       <td colSpan={10} className="px-3 py-3 sm:pl-10">
-                        <MaterialKrovnega k={k} izvoz={izvoz(k)} danes={danes} />
+                        <MaterialKrovnega k={k} izvoz={izvoz(k)} danes={danes} prioritete={prioritete} />
                       </td>
                     </tr>
                   )}
@@ -741,7 +770,18 @@ function PoNalogih({
 
 type KljucVrstice = "ident" | "naziv" | "nalog" | "potrebno" | "zaloge" | "dobave" | "manjka" | "narocila" | "pride" | "stanje";
 
-function MaterialKrovnega({ k, izvoz, danes }: { k: KrovniPripravljenost; izvoz: IzvozFormat[]; danes: IsoDate }) {
+function MaterialKrovnega({
+  k,
+  izvoz,
+  danes,
+  prioritete,
+}: {
+  k: KrovniPripravljenost;
+  izvoz: IzvozFormat[];
+  danes: IsoDate;
+  prioritete: PovezavaPrioritet;
+}) {
+  const [oknoPrioritet, setOknoPrioritet] = useState(false);
   const vrstice = k.vrstice.filter((v) => v.stanje !== "zaloga");
   const sort = useRazvrscanje<VrsticaPotrebe, KljucVrstice>({
     ident: (v) => v.ident,
@@ -774,7 +814,7 @@ function MaterialKrovnega({ k, izvoz, danes }: { k: KrovniPripravljenost; izvoz:
             {k.vrstice.length === 0 && " - ves material je izdan."}
           </p>
           <p className="mt-1">
-            <span className="font-semibold">Nalogi: </span>
+            <span className="font-semibold">Nalogi{k.rocniRed ? " (ročni vrstni red za material)" : ""}: </span>
             {k.nalogi.map((n, i) => (
               <span key={n.st_naloga} title={n.naziv ?? ""}>
                 {i > 0 && ", "}
@@ -785,8 +825,19 @@ function MaterialKrovnega({ k, izvoz, danes }: { k: KrovniPripravljenost; izvoz:
             ))}
           </p>
         </div>
+        <FilterPolje label="Prioritete">
+          <Button
+            variant={k.rocniRed ? "warning" : "neutral"}
+            icon={ListOrdered}
+            hint="Nalogi krovnega in vrstni red za material"
+            onClick={() => setOknoPrioritet(true)}
+          >
+            Prioritete za material
+          </Button>
+        </FilterPolje>
         <Izvoz formati={izvoz} spomin="pripravljenost-krovni" label={`Izvoz krovnega ${k.krovni}`} />
       </div>
+      {oknoPrioritet && <PrioriteteMateriala k={k} p={prioritete} danes={danes} onClose={() => setOknoPrioritet(false)} />}
       {vrstice.length > 0 && (
         <div className="overflow-x-auto rounded-xl bg-white">
           <table className="w-full min-w-[1000px] text-sm">
@@ -801,17 +852,17 @@ function MaterialKrovnega({ k, izvoz, danes }: { k: KrovniPripravljenost; izvoz:
                 <SortTh sort={sort} kljuc="nalog">
                   Nalog
                 </SortTh>
-                <SortTh sort={sort} kljuc="potrebno" desno hint="Razvrsti po neizdani količini">
-                  Potrebno
+                <SortTh sort={sort} kljuc="potrebno" desno hint={STOLPCI_KOLICIN.potrebno.opis}>
+                  {STOLPCI_KOLICIN.potrebno.ime}
                 </SortTh>
-                <SortTh sort={sort} kljuc="zaloge" desno>
-                  Z zaloge
+                <SortTh sort={sort} kljuc="zaloge" desno hint={STOLPCI_KOLICIN.zaloge.opis}>
+                  {STOLPCI_KOLICIN.zaloge.ime}
                 </SortTh>
-                <SortTh sort={sort} kljuc="dobave" desno>
-                  Z dobave
+                <SortTh sort={sort} kljuc="dobave" desno hint={STOLPCI_KOLICIN.dobave.opis}>
+                  {STOLPCI_KOLICIN.dobave.ime}
                 </SortTh>
-                <SortTh sort={sort} kljuc="manjka" desno>
-                  Ni naročeno
+                <SortTh sort={sort} kljuc="manjka" desno hint={STOLPCI_KOLICIN.manjka.opis}>
+                  {STOLPCI_KOLICIN.manjka.ime}
                 </SortTh>
                 <SortTh sort={sort} kljuc="narocila">
                   Naročilo · dobavitelj · rok
@@ -862,6 +913,25 @@ function MaterialKrovnega({ k, izvoz, danes }: { k: KrovniPripravljenost; izvoz:
           </table>
         </div>
       )}
+      {vrstice.length > 0 && <LegendaKolicin />}
+    </div>
+  );
+}
+
+/** Razlaga stolpcev količin pod tabelo (ena vrstica = en nalog × en material). */
+function LegendaKolicin() {
+  return (
+    <div className="rounded-xl bg-ink-50 px-3 py-2 text-xs text-ink-600">
+      <p>
+        Ena vrstica = en nalog × en material. Prikazane so samo vrstice, ki jih zaloga ne pokrije v celoti. <b>{LEGENDA_KOLICIN}</b>
+      </p>
+      <ul className="mt-1 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
+        {Object.values(STOLPCI_KOLICIN).map((s) => (
+          <li key={s.ime}>
+            <b>{s.ime}</b> - {s.opis}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -893,9 +963,10 @@ function PoMaterialu({ material, danes }: { material: MaterialPripravljenost[]; 
     <div className="fp-card flex flex-col gap-3 p-3 sm:p-4">
       <div className="flex flex-wrap items-start gap-3">
         <p className="min-w-[min(100%,18rem)] flex-1 text-sm text-ink-600">
-          Material, ki ni na zalogi za vsaj en nalog. <b>Potrebno</b> je neizdana količina vseh aktivnih nalogov, <b>Ni naročeno</b>{" "}
-          tisto, česar ne pokrijeta ne zaloga ne odprta naročila. Zaloga ostalih skladišč je samo informativna. Klik na vrstico pokaže
-          naročila in naloge.
+          Material, ki ni na zalogi za vsaj en nalog. <b>{STOLPCI_KOLICIN.potrebno.ime}</b> je neizdana količina vseh aktivnih nalogov,{" "}
+          <b>Zaloga</b> trenutna zaloga matičnega skladišča, <b>Naročeno</b> seštevek odprtih naročil dobaviteljem,{" "}
+          <b>{STOLPCI_KOLICIN.manjka.ime}</b> tisto, česar ne pokrijeta ne zaloga ne odprta naročila (treba naročiti). Zaloga ostalih
+          skladišč je samo informativna. Klik na vrstico pokaže naročila in naloge.
         </p>
         <RazpriGumb vsi={vsi} n={material.length} onClick={() => setRazprti(vsi ? new Set() : new Set(material.map((m) => m.ident)))} />
       </div>
@@ -913,8 +984,8 @@ function PoMaterialu({ material, danes }: { material: MaterialPripravljenost[]; 
               <SortTh sort={sort} kljuc="skupina">
                 Skupina
               </SortTh>
-              <SortTh sort={sort} kljuc="potrebno" desno>
-                Potrebno
+              <SortTh sort={sort} kljuc="potrebno" desno hint="Še za izdati na vseh aktivnih nalogih (planirano - že izdano)">
+                {STOLPCI_KOLICIN.potrebno.ime}
               </SortTh>
               <SortTh sort={sort} kljuc="zaloga" desno hint="Razvrsti po zalogi matičnega skladišča">
                 Zaloga
@@ -925,8 +996,8 @@ function PoMaterialu({ material, danes }: { material: MaterialPripravljenost[]; 
               <SortTh sort={sort} kljuc="naroceno" desno hint="Razvrsti po odprtih naročilih">
                 Naročeno
               </SortTh>
-              <SortTh sort={sort} kljuc="manjka" desno>
-                Ni naročeno
+              <SortTh sort={sort} kljuc="manjka" desno hint={STOLPCI_KOLICIN.manjka.opis}>
+                {STOLPCI_KOLICIN.manjka.ime}
               </SortTh>
               <SortTh sort={sort} kljuc="dobava">
                 Naslednja dobava
@@ -1118,17 +1189,17 @@ function PodrobnostiMateriala({ m, danes }: { m: MaterialPripravljenost; danes: 
                 <SortTh sort={sortN} kljuc="zacetek">
                   Začetek
                 </SortTh>
-                <SortTh sort={sortN} kljuc="potrebno" desno>
-                  Potrebno
+                <SortTh sort={sortN} kljuc="potrebno" desno hint={STOLPCI_KOLICIN.potrebno.opis}>
+                  {STOLPCI_KOLICIN.potrebno.ime}
                 </SortTh>
-                <SortTh sort={sortN} kljuc="zaloge" desno>
-                  Z zaloge
+                <SortTh sort={sortN} kljuc="zaloge" desno hint={STOLPCI_KOLICIN.zaloge.opis}>
+                  {STOLPCI_KOLICIN.zaloge.ime}
                 </SortTh>
-                <SortTh sort={sortN} kljuc="dobave" desno>
-                  Z dobave
+                <SortTh sort={sortN} kljuc="dobave" desno hint={STOLPCI_KOLICIN.dobave.opis}>
+                  {STOLPCI_KOLICIN.dobave.ime}
                 </SortTh>
-                <SortTh sort={sortN} kljuc="manjka" desno>
-                  Ni naročeno
+                <SortTh sort={sortN} kljuc="manjka" desno hint={STOLPCI_KOLICIN.manjka.opis}>
+                  {STOLPCI_KOLICIN.manjka.ime}
                 </SortTh>
                 <SortTh sort={sortN} kljuc="pride" hint="Razvrsti po roku dobave iz naročila">
                   Pride
@@ -1162,6 +1233,381 @@ function PodrobnostiMateriala({ m, danes }: { m: MaterialPripravljenost; danes: 
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+// =====================================================================
+// PRIORITETE ZA MATERIAL (vrstni red nalogov krovnega - samo za material)
+// =====================================================================
+
+/** Povezava okna prioritet s podatki strani. */
+type PovezavaPrioritet = {
+  /** Krovni, izračunan z drugim vrstnim redom nalogov (null = privzeti) - predogled pred shranjevanjem. */
+  preracunaj: (krovni: string, red: string[] | null) => KrovniPripravljenost | null;
+  /** Ponovno naloži podatke (po shranjevanju / resetu). */
+  nalozi: () => Promise<void>;
+  /** Tabela vrstnega reda še ne obstaja (migracija 039) - shranjevanje ni mogoče. */
+  niTabele: boolean;
+  /** Ni uvoza naročil (VD200) - privzeti vrstni red je brez odprem. */
+  brezOdprem: boolean;
+};
+
+function ZnackaRocniRed() {
+  return (
+    <span
+      title="Vrstni red nalogov za material je nastavljen ročno (Prioritete za material) - velja, dokler ga ne resetiraš"
+      className="ml-1.5 whitespace-nowrap rounded-full bg-warn-400 px-1.5 py-0.5 align-middle font-sans text-[10px] font-bold text-ink-900"
+    >
+      ročni red
+    </span>
+  );
+}
+
+/** Stanje materiala naloga: najslabše stanje vrstic, koliko vrstic ni na zalogi in kdaj je material kompleten. */
+function materialNaloga(n: NalogPotrebe, danes: IsoDate) {
+  const stanje = n.vrstice.reduce<StanjeMateriala>((a, v) => slabse(a, v.stanje), "zaloga");
+  const niNaZalogi = n.vrstice.filter((v) => v.stanje !== "zaloga").length;
+  const neznano = n.vrstice.some((v) => v.kompleten === null);
+  const kompleten = neznano ? null : n.vrstice.reduce<IsoDate>((a, v) => (v.kompleten! > a ? v.kompleten! : a), danes);
+  const zamuja = kompleten === danes && n.vrstice.some((v) => v.rokDobave !== null && v.rokDobave < danes);
+  const txt = stanje === "zaloga" ? "v hiši" : !kompleten ? "ni znano" : zamuja ? "zamuja" : formatShort(kompleten);
+  return { stanje, niNaZalogi, txt };
+}
+
+function PrioriteteMateriala({
+  k,
+  p,
+  danes,
+  onClose,
+}: {
+  k: KrovniPripravljenost;
+  p: PovezavaPrioritet;
+  danes: IsoDate;
+  onClose: () => void;
+}) {
+  const notify = useToast();
+  const trenutni = useMemo(() => k.nalogi.map((n) => n.st_naloga), [k]);
+  const privzeti = useMemo(() => [...k.nalogi].sort((a, b) => a.privzetiRed - b.privzetiRed).map((n) => n.st_naloga), [k]);
+  const [red, setRed] = useState<string[]>(trenutni);
+  const [odprt, setOdprt] = useState<string | null>(null);
+  const [delam, setDelam] = useState(false);
+
+  const kljuc = (xs: string[]) => xs.join("|");
+  const spremenjen = kljuc(red) !== kljuc(trenutni);
+  const jePrivzeti = kljuc(red) === kljuc(privzeti);
+  // Predogled: material po vrstnem redu v oknu (še ni shranjen)
+  const predogled = useMemo(
+    () => (spremenjen ? (p.preracunaj(k.krovni, jePrivzeti ? null : red) ?? k) : k),
+    [spremenjen, jePrivzeti, red, k, p],
+  );
+  const nalog = useMemo(() => new Map(predogled.nalogi.map((n) => [n.st_naloga, n])), [predogled]);
+  const prej = useMemo(() => new Map(k.nalogi.map((n) => [n.st_naloga, materialNaloga(n, danes)])), [k, danes]);
+
+  const premakni = (st: string, na: number) => {
+    const i = red.indexOf(st);
+    const j = Math.max(0, Math.min(red.length - 1, na));
+    if (i < 0 || i === j) return;
+    const x = [...red];
+    x.splice(i, 1);
+    x.splice(j, 0, st);
+    setRed(x);
+  };
+
+  async function izvedi(akcija: () => Promise<void>, sporocilo: string) {
+    setDelam(true);
+    try {
+      await akcija();
+      await p.nalozi();
+      notify("success", sporocilo);
+      onClose();
+    } catch (e) {
+      notify("error", `Vrstnega reda ni bilo mogoče shraniti: ${(e as Error).message}`, 10000);
+    } finally {
+      setDelam(false);
+    }
+  }
+  const shrani = () =>
+    izvedi(
+      () => (jePrivzeti ? resetirajVrstniRed(k.krovni) : shraniVrstniRed(k.krovni, red)),
+      jePrivzeti ? `Krovni ${k.krovni}: velja privzeti vrstni red za material.` : `Krovni ${k.krovni}: vrstni red za material je shranjen.`,
+    );
+  const resetiraj = () => {
+    if (!k.rocniRed) return setRed(privzeti);
+    izvedi(() => resetirajVrstniRed(k.krovni), `Krovni ${k.krovni}: prioritete so resetirane na privzeti vrstni red.`);
+  };
+
+  return (
+    <Modal
+      open
+      title={`Prioritete za material · krovni ${k.krovni}`}
+      onClose={onClose}
+      sirina="max-w-6xl"
+      noga={
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="warning"
+            icon={RotateCcw}
+            hint="Vrni privzeti vrstni red (po odpremah)"
+            disabled={delam || (!k.rocniRed && jePrivzeti) || (!!k.rocniRed && p.niTabele)}
+            onClick={resetiraj}
+          >
+            Resetiraj prioritete
+          </Button>
+          <span className="flex-1" />
+          <Button variant="neutral" hint="Zapri brez shranjevanja" onClick={onClose}>
+            Prekliči
+          </Button>
+          <Button hint="Shrani vrstni red za material" disabled={!spremenjen || delam || p.niTabele} onClick={shrani}>
+            Shrani vrstni red
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <div className="rounded-xl bg-ink-50 px-3 py-2 text-xs text-ink-600">
+          <p>
+            Vrstni red določa, kateri nalog krovnega prvi dobi material z zaloge in iz dobav. Velja <b>samo za material</b> - odpreme in
+            delovni plan se ne spremenijo. Shranjen vrstni red je uradni za vse (stran, izvozi, FIN:TV), dokler ga ne resetiraš.
+            Privzeto: začetek v planu, nato najzgodnejša odprema naloga (nalogi brez odpreme so zadnji). Krovni ostane na istem mestu
+            med ostalimi krovnimi.
+          </p>
+          <p className="mt-1">
+            {k.rocniRed ? (
+              <b className="text-warn-700">
+                Velja ročni vrstni red
+                {k.rocniRed.spremenil ? ` (${k.rocniRed.spremenil}` : " ("}
+                {k.rocniRed.cas ? `${k.rocniRed.spremenil ? ", " : ""}${formatShort(k.rocniRed.cas.slice(0, 10) as IsoDate)})` : ")"}.
+              </b>
+            ) : (
+              <b>Velja privzeti vrstni red.</b>
+            )}{" "}
+            {spremenjen && <b className="text-fines-600">Predogled - spremembe še niso shranjene.</b>}
+          </p>
+          {p.niTabele && (
+            <p className="mt-1 font-semibold text-nok-600">
+              Shranjevanje ni mogoče: v bazi še ni tabele (migracija 039_material_vrstni_red.sql). Predogled deluje.
+            </p>
+          )}
+          {p.brezOdprem && <p className="mt-1 font-semibold text-warn-700">Ni uvoza naročil (VD200) - odpreme nalogov niso znane.</p>}
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-ink-100 bg-white">
+          <table className="w-full min-w-[880px] text-sm">
+            <thead className="fp-thead" style={{ position: "static" }}>
+              <tr className="text-left text-xs font-bold">
+                <th className="w-36 px-2 py-2" title="Mesto naloga pri razdelitvi materiala - 1 dobi material prvi">
+                  Prioriteta za material
+                </th>
+                <th className="px-2 py-2">Nalog</th>
+                <th className="px-2 py-2">Izdelek</th>
+                <th className="px-2 py-2 text-right">Kos</th>
+                <th className="px-2 py-2" title="Najzgodnejša odprema, ki jo nalog pokrije (kot na Prioritetah / Zamudah dobav)">
+                  Prva odprema
+                </th>
+                <th className="px-2 py-2">Začetek</th>
+                <th className="px-2 py-2" title="Stanje materiala naloga po tem vrstnem redu">
+                  Material
+                </th>
+                <th className="px-2 py-2" title="Kdaj je ves material naloga v hiši">
+                  Kompleten
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {red.map((st, i) => {
+                const n = nalog.get(st);
+                if (!n) return null;
+                const m = materialNaloga(n, danes);
+                const pr = prej.get(st);
+                const razprt = odprt === st;
+                const odp = n.odpreme;
+                return (
+                  <Fragment key={st}>
+                    <tr className={`border-b border-ink-100 align-top ${razprt ? "bg-ink-50" : "hover:bg-ink-50"}`}>
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-1">
+                          <input
+                            key={`${st}-${i}`}
+                            type="number"
+                            min={1}
+                            max={red.length}
+                            defaultValue={i + 1}
+                            aria-label={`Prioriteta naloga ${st}`}
+                            title="Vpiši novo mesto in pritisni Enter"
+                            className="h-8 w-14 rounded-md border border-ink-200 px-1.5 text-right font-bold tabular-nums"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") premakni(st, Number((e.target as HTMLInputElement).value) - 1);
+                            }}
+                            onBlur={(e) => premakni(st, Number(e.target.value) - 1)}
+                          />
+                          <button
+                            type="button"
+                            title="Premakni višje (prej dobi material)"
+                            aria-label={`Premakni ${st} višje`}
+                            disabled={i === 0}
+                            onClick={() => premakni(st, i - 1)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-600 hover:bg-ink-100 hover:text-fines-500 disabled:opacity-30"
+                          >
+                            <ChevronUp className="h-4 w-4" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            title="Premakni nižje (kasneje dobi material)"
+                            aria-label={`Premakni ${st} nižje`}
+                            disabled={i === red.length - 1}
+                            onClick={() => premakni(st, i + 1)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-600 hover:bg-ink-100 hover:text-fines-500 disabled:opacity-30"
+                          >
+                            <ChevronDown className="h-4 w-4" aria-hidden />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5">
+                        <span className="font-mono font-semibold">{st}</span>
+                        {n.privzetiRed !== i + 1 && <span className="block text-xs text-ink-400">privzeto {n.privzetiRed}.</span>}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <div>{n.naziv ?? <span className="text-ink-400">–</span>}</div>
+                        <div className="text-xs text-ink-500">
+                          <span className="font-mono">{n.koda_artikla}</span>
+                          {n.druzina && ` · ${n.druzina}`}
+                          {n.narocnik && !n.narocnik.toLowerCase().startsWith("fines") && ` · za: ${kratkoIme(n.narocnik)}`}
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{n.kos === null ? "–" : kol(n.kos)}</td>
+                      <td className="px-2 py-1.5">
+                        {odp.length ? (
+                          <>
+                            <span className="font-semibold tabular-nums">{datumTxt(n.prvaOdprema)}</span>
+                            <span className="block text-xs text-ink-500" title={odp.map((d) => `${d.stevilka} ${d.partner ?? ""} ${datumTxt(d.datum)}`).join("\n")}>
+                              {odp[0].stevilka} · {kratkoIme(odp[0].partner)}
+                              {odp.length > 1 && ` +${odp.length - 1}`}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-ink-400">brez odpreme (na zalogo)</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
+                        {n.zacetek ? formatShort(n.zacetek) : <span className="text-xs text-ink-400">ni v planu</span>}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setOdprt(razprt ? null : st)}
+                          title={razprt ? "Skrij material naloga" : "Pokaži material naloga"}
+                          aria-expanded={razprt}
+                          className="inline-flex items-center gap-1 text-left"
+                        >
+                          {razprt ? <ChevronDown className="h-4 w-4 text-ink-500" aria-hidden /> : <ChevronRight className="h-4 w-4 text-ink-500" aria-hidden />}
+                          <Znacka stanje={m.stanje} />
+                        </button>
+                        <span className="block pl-5 text-xs text-ink-500">
+                          {n.vrstice.length === 0 ? "ves izdan" : m.niNaZalogi ? `${m.niNaZalogi} / ${n.vrstice.length} ni na zalogi` : `${n.vrstice.length} na zalogi`}
+                        </span>
+                        {spremenjen && pr && pr.stanje !== m.stanje && (
+                          <span className="block pl-5 text-xs font-semibold text-fines-600">prej: {OPIS_STANJA_MAT[pr.stanje]}</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
+                        <span className={m.stanje === "zaloga" ? "text-ok-600" : BARVA[m.stanje].besedilo}>{m.txt}</span>
+                        {spremenjen && pr && pr.txt !== m.txt && <span className="block text-xs text-fines-600">prej: {pr.txt}</span>}
+                      </td>
+                    </tr>
+                    {razprt && (
+                      <tr className="border-b border-ink-100 bg-ink-50">
+                        <td colSpan={8} className="px-2 pb-3 pt-1">
+                          <MaterialNaloga n={n} danes={danes} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-ink-500">{LEGENDA_KOLICIN}. Klik na stanje materiala pokaže razporeditev materiala naloga.</p>
+      </div>
+    </Modal>
+  );
+}
+
+type KljucMaterialaNaloga = "ident" | "naziv" | "potrebno" | "zaloge" | "dobave" | "manjka" | "pride" | "stanje";
+
+/** Ves neizdan material naloga (tudi pokrit z zalogo) - razporeditev po izbranem vrstnem redu. */
+function MaterialNaloga({ n, danes }: { n: NalogPotrebe; danes: IsoDate }) {
+  const sort = useRazvrscanje<VrsticaPotrebe, KljucMaterialaNaloga>({
+    ident: (v) => v.ident,
+    naziv: (v) => v.naziv,
+    potrebno: (v) => v.potrebno,
+    zaloge: (v) => v.izZaloge,
+    dobave: (v) => v.dobave.reduce((s, d) => s + d.kolicina, 0),
+    manjka: (v) => v.manjka,
+    pride: (v) => v.rokDobave,
+    stanje: (v) => -resnost(v.stanje),
+  });
+  if (!n.vrstice.length) return <p className="px-2 py-2 text-sm text-ink-500">Ves material naloga je že izdan.</p>;
+  const privzeto = [...n.vrstice].sort((a, b) => resnost(b.stanje) - resnost(a.stanje) || a.ident.localeCompare(b.ident));
+  return (
+    <div className="overflow-x-auto rounded-lg bg-white">
+      <table className="w-full min-w-[760px] text-sm">
+        <thead className="fp-thead" style={{ position: "static" }}>
+          <tr className="text-left text-xs font-bold">
+            <SortTh sort={sort} kljuc="ident">
+              Ident
+            </SortTh>
+            <SortTh sort={sort} kljuc="naziv">
+              Material
+            </SortTh>
+            <SortTh sort={sort} kljuc="potrebno" desno hint={STOLPCI_KOLICIN.potrebno.opis}>
+              {STOLPCI_KOLICIN.potrebno.ime}
+            </SortTh>
+            <SortTh sort={sort} kljuc="zaloge" desno hint={STOLPCI_KOLICIN.zaloge.opis}>
+              {STOLPCI_KOLICIN.zaloge.ime}
+            </SortTh>
+            <SortTh sort={sort} kljuc="dobave" desno hint={STOLPCI_KOLICIN.dobave.opis}>
+              {STOLPCI_KOLICIN.dobave.ime}
+            </SortTh>
+            <SortTh sort={sort} kljuc="manjka" desno hint={STOLPCI_KOLICIN.manjka.opis}>
+              {STOLPCI_KOLICIN.manjka.ime}
+            </SortTh>
+            <SortTh sort={sort} kljuc="pride" hint="Razvrsti po roku dobave iz naročila">
+              Pride
+            </SortTh>
+            <SortTh sort={sort} kljuc="stanje">
+              Stanje
+            </SortTh>
+          </tr>
+        </thead>
+        <tbody>
+          {(sort.kljuc ? sort.razvrsti(n.vrstice) : privzeto).map((v) => (
+            <tr key={v.ident} className="border-b border-ink-100 last:border-0">
+              <td className="px-2 py-1 font-mono">{v.ident}</td>
+              <td className="max-w-64 truncate px-2 py-1" title={v.naziv ?? ""}>
+                {v.naziv}
+              </td>
+              <td className="px-2 py-1 text-right tabular-nums">
+                {kol(v.potrebno)} <span className="text-xs text-ink-400">{v.em}</span>
+              </td>
+              <td className="px-2 py-1 text-right tabular-nums">{v.izZaloge > 0 ? kol(v.izZaloge) : <span className="text-ink-300">0</span>}</td>
+              <td className="px-2 py-1 text-right tabular-nums">
+                {v.dobave.length ? kol(v.dobave.reduce((s, d) => s + d.kolicina, 0)) : <span className="text-ink-300">0</span>}
+              </td>
+              <td className="px-2 py-1 text-right tabular-nums">
+                {v.manjka > 0 ? <b className="text-nok-600">{kol(v.manjka)}</b> : <span className="text-ink-300">0</span>}
+              </td>
+              <td className="px-2 py-1 tabular-nums">
+                <PrideCelica v={v} danes={danes} />
+              </td>
+              <td className="px-2 py-1">
+                <Znacka stanje={v.stanje} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
