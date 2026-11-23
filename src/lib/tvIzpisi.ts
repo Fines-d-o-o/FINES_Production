@@ -78,7 +78,7 @@ export const tvIzpisiPrioritet = (naziv: (o: OddelekKoda) => string): TvIzpis[] 
     format: "Animirana scena na krovni (najnujnejši najprej), daljši seznam odprem čez več strani - nič se ne odreže.",
     kdaj: "Samodejno po vsakem uvozu Naročil (VD200), Odprem (VD300), Delovnih nalogov ali Materiala (Sync na strani Podatki), po Shrani plan in z gumbom Sync na strani Podatki → Sync v TV.",
     velja: `${VELJA_PRIORITETE_DNI} dni od objave (vsaka nova objava jo zamenja) - brez synca TV ne kaže zastarelih podatkov.`,
-    prenos: "Pogled Po krovnih → Izvoz (Excel / sporočilo) - isti podatki kot na TV.",
+    prenos: "Pogled Po krovnih → Izvoz (Excel / PDF / sporočilo) - isti podatki kot na TV.",
   }));
 
 /** Zasedenost → Delovni plan. */

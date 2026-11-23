@@ -9,6 +9,13 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "40.03",
+    datum: "23. 11. 2026",
+    spremembe: [
+      "Prioritete: nov format izvoza PDF (A4 za tisk) v vseh zavihkih - odpreme po tednih, prioritete nalogov (zamuja / po prvi odpremi ali po krovnih), po artiklih in zasedenost naročil; isti filtri in razvrščanje kot Excel.",
+    ],
+  },
+  {
     verzija: "40.02",
     datum: "23. 11. 2026",
     spremembe: [

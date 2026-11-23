@@ -424,6 +424,32 @@ function PrioriteteInner() {
     else izvoziArtikleXlsx(sortArtiklov.razvrsti(prikazaniArtikli), `prioritete_artikli_${danes}.xlsx`);
   }
 
+  /** PDF - isti podatki kot Excel (knjižnica se naloži šele ob kliku). */
+  async function izvoziPdf() {
+    const pdf = await import("@/lib/prioritetePdf");
+    if (pogled === "tedni") await pdf.prenesiOdpremePdf(prikazaneRazvrscene, danes, `prioritete_odpreme_${danes}`);
+    else if (pogled === "nalogi" && poKrovnih) await pdf.prenesiKrovnePdf(krovneSkupine, danes, `prioritete_krovni_${danes}`);
+    else if (pogled === "nalogi")
+      await pdf.prenesiNalogePdf(
+        [...sortNalogov.razvrsti(prikazaniNalogi.filter((n) => n.zamuja)), ...sortNalogov.razvrsti(prikazaniNalogi.filter((n) => !n.zamuja))],
+        danes,
+        `prioritete_nalogi_${danes}`,
+      );
+    else if (pogled === "zasedenost")
+      await pdf.prenesiUreNarocilPdf(
+        ureTabela,
+        izborZas.tip === "teden"
+          ? `Teden ${isoWeek(izborZas.teden)} · od ${formatShort(izborZas.teden)}`
+          : izborZas.tip === "zapadlo"
+            ? `Zapadlo (pred ${formatShort(zacetekZas)})`
+            : izborZas.tip === "brez"
+              ? "Brez datuma odpreme"
+              : "Vsi tedni",
+        `prioritete_zasedenost_${izborZas.tip === "teden" ? `teden_${isoWeek(izborZas.teden)}_${izborZas.teden}` : izborZas.tip}`,
+      );
+    else await pdf.prenesiArtiklePdf(sortArtiklov.razvrsti(prikazaniArtikli), danes, `prioritete_artikli_${danes}`);
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* ============ GLAVA + UVOZ ============ */}
@@ -643,6 +669,21 @@ function PrioriteteInner() {
                 spomin={`prioritete-${pogled}`}
                 formati={[
                   { koda: "xlsx", label: "Excel (.xlsx)", hint: IZVOZ_HINT[pogled], akcija: izvozi },
+                  {
+                    koda: "pdf",
+                    label: "PDF",
+                    hint: IZVOZ_HINT[pogled].replace("v Excel", "v PDF za tisk"),
+                    disabled:
+                      pogled === "tedni"
+                        ? prikazaneRazvrscene.length === 0
+                        : pogled === "nalogi"
+                          ? prikazaniNalogi.length === 0
+                          : pogled === "zasedenost"
+                            ? ureTabela.length === 0
+                            : prikazaniArtikli.length === 0,
+                    zakaj: "Ni podatkov za izbrane filtre",
+                    akcija: izvoziPdf,
+                  },
                   ...(pogled === "tedni" || (pogled === "nalogi" && poKrovnih)
                     ? [
                         {
