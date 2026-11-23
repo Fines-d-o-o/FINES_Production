@@ -9,10 +9,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "40.02",
+    datum: "23. 11. 2026",
+    spremembe: [
+      "FIN:TV Prioritete krovnih: objavijo se samo krovni, ki jih delovni plan oddelka postavi v tekoči ali naslednji teden (isti razpored kot workflow na TV).",
+      "FIN:TV Prioritete krovnih: odpreme po delovnih nalogih - dan odpreme, ident, naziv, delovni nalog, količina, kupec in lokacija (delavec med kosi krovnega najde prave).",
+    ],
+  },
+  {
     verzija: "40.01",
     datum: "23. 11. 2026",
     spremembe: [
-      "FIN:TV - nova komponenta »Prioritete krovnih« (vsak oddelek svoja): za vsak krovni nalog, ki je v delovnem planu oddelka v tekočem ali naslednjem tednu (kot workflow), vse odpreme po delovnih nalogih - dan in dni do odpreme (zamuja, danes, jutri, čez N dni, nalog zamuja), ident, cel naziv, delovni nalog, količina, kupec in lokacija, zgoraj koliko kosov je naročenih, v koliko naročilih in koliko gre na zalogo. Enak izračun kot stran Prioritete (potrjena naročila, samo izdelki) - iskanje številke krovnega pokaže iste odpreme.",
+      "FIN:TV - nova komponenta »Prioritete krovnih« (vsak oddelek svoja): za vsak krovni nalog iz delovnega plana oddelka vse odpreme, ki čakajo nanj - datum, kosi, družina, kupec in stanje (zamuja, danes, jutri, čez N dni, nalog zamuja), zgoraj koliko kosov je naročenih, v koliko naročilih in koliko gre na zalogo. Enak izračun kot stran Prioritete (potrjena naročila, samo izdelki) - iskanje številke krovnega pokaže iste odpreme.",
       "Objava samodejno po uvozu Naročil, Odprem, Delovnih nalogov ali Materiala, po Shrani plan in z gumbom Sync (Podatki → Sync v TV, nov kvadratek »Prioritete krovnih«); na strani Prioritete gumb FIN:TV z opisom.",
       "Potrebna FinOS migracija 031_fin_tv_prioritete_krovnih.sql (in 030 animirane objave).",
     ],
