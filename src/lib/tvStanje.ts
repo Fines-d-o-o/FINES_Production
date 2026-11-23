@@ -4,7 +4,7 @@ import { formatDatumUra, toIso } from "./dates";
 import { ODDELKI_NORMATIVA, type OddelekKoda } from "./normativi";
 import { getSupabase } from "./supabase";
 import type { SyncDatotekaKljuc } from "./syncDatoteke";
-import { ODDELKI_TV, kodaDela, kodaPregleda, kodaPripravljenosti, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
+import { ODDELKI_TV, kodaDela, kodaPregleda, kodaPrioritet, kodaPripravljenosti, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
 import type { OpraviloTv } from "./tvVrsta";
 
 /** Stanje komponente v FinOS: ali obstaja, ali je vklopljena, zadnja objava. */
@@ -104,6 +104,14 @@ export const SKUPINE_TV: SkupinaTv[] = [
     samodejno: ["izdaje", "material", "dobave", "nalogi"],
     rocno: true,
     komponente: ODDELKI_TV.map((o) => ({ naslov: NAZIV_ODDELKA[o], koda: kodaPripravljenosti(o) })),
+  },
+  {
+    id: "prioritete",
+    naslov: "Prioritete krovnih",
+    oddelek: null,
+    samodejno: ["narocila", "odpreme", "nalogi", "material"],
+    rocno: true,
+    komponente: ODDELKI_TV.map((o) => ({ naslov: NAZIV_ODDELKA[o], koda: kodaPrioritet(o) })),
   },
 ];
 

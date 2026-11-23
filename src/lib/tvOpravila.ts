@@ -24,8 +24,23 @@ export function objaviPlanVOzadju(oddelek: OddelekKoda, { spredaj = false }: { s
     },
     { spredaj },
   );
-  // Plan določa, kateri krovni so na listih Pripravljenosti materiala in njihov začetek
+  // Plan določa, kateri krovni so na listih Pripravljenosti materiala / Prioritet krovnih in njihov začetek
   objaviPripravljenostVOzadju("delovni plan");
+  objaviPrioriteteVOzadju("delovni plan");
+}
+
+/** "Prioritete krovnih" - po uvozu naročil, odprem, nalogov ali materiala, po Shrani plan in z gumbom Sync. */
+export function objaviPrioriteteVOzadju(izvor = "sync") {
+  dodajObjavoTv({
+    id: "prioritete",
+    naslov: "Prioritete krovnih",
+    kode: kodeSkupine("prioritete"),
+    delo: async () => {
+      const { objaviPrioriteteNaTv } = await import("./tvObjava");
+      const izid = await objaviPrioriteteNaTv(izvor);
+      return izid.oddelki.length ? `Objavljeno: ${izid.oddelki.join(", ")}` : "Ni objave - komponente so izklopljene";
+    },
+  });
 }
 
 /** "Pripravljenost materiala" - po uvozu izdaj, materiala, naročil ali nalogov, po Shrani plan in z gumbom Sync. */
@@ -49,7 +64,7 @@ export function objaviVsePlaneVOzadju() {
 
 /**
  * VSE komponente FIN:TV (gumb Sync vse na strani Sync v TV in v glavi): plan vseh oddelkov (s tem tudi Pripravljenost
- * materiala), Delo - prejšnji dan in Zaključeni krovni - ne glede na to, ali so se datoteke spremenile.
+ * materiala in Prioritete krovnih), Delo - prejšnji dan in Zaključeni krovni - ne glede na to, ali so se datoteke spremenile.
  */
 export function objaviVseNaTvVOzadju() {
   objaviVsePlaneVOzadju();

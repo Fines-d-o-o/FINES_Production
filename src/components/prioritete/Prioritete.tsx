@@ -83,6 +83,9 @@ import { FilterCheckbox, FilterIskanje, FilterIzbira, FilterPolje, FilterPreklop
 import { SortTh, TabelaOkvir, useRazvrscanje, type Razvrscanje } from "@/components/ui/Tabela";
 import { TxtSporocilo } from "@/components/ui/TxtSporocilo";
 import { PodatkiVir } from "@/components/PodatkiVir";
+import { TvPovezava } from "@/components/TvPovezava";
+import { tvIzpisiPrioritet } from "@/lib/tvIzpisi";
+import { NAZIV_ODDELKA } from "@/lib/tvStanje";
 import { usePoSyncu } from "@/components/SyncProvider";
 import { Zavihki, type Zavihek } from "@/components/ui/Zavihki";
 import {
@@ -431,7 +434,10 @@ function PrioriteteInner() {
             Potrjena naročila (VD200) · zaloga iz izpisa materiala · zaloga in delovni nalogi razdeljeni po datumu odpreme
           </p>
         </div>
-        <PodatkiVir kljuci={["narocila", "odpreme", "material", "nalogi"]} />
+        <div className="flex w-full items-stretch gap-3 sm:w-auto">
+          <PodatkiVir kljuci={["narocila", "odpreme", "material", "nalogi"]} />
+          <TvPovezava izpisi={tvIzpisiPrioritet((o) => NAZIV_ODDELKA[o])} />
+        </div>
       </div>
 
       {niOdpremTabel && (

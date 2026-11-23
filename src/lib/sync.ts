@@ -5,7 +5,7 @@ import { preberiDobaveXlsx, shraniDobaveUvoz } from "./dobave";
 import { preberiMaterialXlsx, shraniMaterialUvoz } from "./material";
 import { preberiIdenteXlsx, preberiKosovniceXlsx, shraniIdenteUvoz, shraniKosovniceUvoz } from "./kosovniceUvoz";
 import type { SyncDatotekaKljuc } from "./syncDatoteke";
-import { SYNC_PRIPRAVLJENOST } from "./tvIzpisi";
+import { SYNC_PRIORITETE, SYNC_PRIPRAVLJENOST } from "./tvIzpisi";
 import { preberiVd200Xlsx, preberiVd300Xlsx, shraniOdpUvoz, shraniPriUvoz } from "./prioritete";
 import { preberiNalogeXlsx, shraniUvoz } from "./zasedenost";
 import { preberiPorocanoXlsx, shraniPorocanoUvoz } from "./porocanoDelo";
@@ -75,6 +75,11 @@ export async function uvoziDatoteko(kljuc: SyncDatotekaKljuc, f: File) {
   if ((SYNC_PRIPRAVLJENOST as readonly string[]).includes(kljuc)) {
     const { objaviPripravljenostVOzadju } = await import("./tvOpravila");
     objaviPripravljenostVOzadju(`uvoz ${kljuc}`);
+  }
+  // FIN:TV "Prioritete krovnih" (naročila, odpreme, nalogi, material)
+  if ((SYNC_PRIORITETE as readonly string[]).includes(kljuc)) {
+    const { objaviPrioriteteVOzadju } = await import("./tvOpravila");
+    objaviPrioriteteVOzadju(`uvoz ${kljuc}`);
   }
   return r;
 }

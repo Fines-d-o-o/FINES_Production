@@ -11,7 +11,14 @@ import {
   type SkupinaTv,
   type StanjeTv,
 } from "@/lib/tvStanje";
-import { objaviDeloVOzadju, objaviPlanVOzadju, objaviPripravljenostVOzadju, objaviVseNaTvVOzadju, objaviZakljuceneVOzadju } from "@/lib/tvOpravila";
+import {
+  objaviDeloVOzadju,
+  objaviPlanVOzadju,
+  objaviPrioriteteVOzadju,
+  objaviPripravljenostVOzadju,
+  objaviVseNaTvVOzadju,
+  objaviZakljuceneVOzadju,
+} from "@/lib/tvOpravila";
 import { SYNC_DATOTEKE } from "@/lib/syncDatoteke";
 import { useSync } from "@/components/SyncProvider";
 import { casSync } from "@/components/SyncGlava";
@@ -106,7 +113,9 @@ function KvadratekSkupine({ s }: { s: SkupinaTv }) {
       ? objaviPlanVOzadju(s.oddelek)
       : s.id === "pripravljenost"
         ? objaviPripravljenostVOzadju("Sync v TV")
-        : s.id === "delo"
+        : s.id === "prioritete"
+          ? objaviPrioriteteVOzadju("Sync v TV")
+          : s.id === "delo"
           ? objaviDeloVOzadju("Sync v TV")
           : s.id === "zakljuceni"
             ? objaviZakljuceneVOzadju("Sync v TV")

@@ -25,7 +25,17 @@ import type { WorkflowPlan } from "./plan";
 import { ustvariPlanPdf } from "./planPdf";
 import { ustvariPlanPregledPdf, type DruzineNormativov } from "./planPregledPdf";
 import { getSupabase } from "./supabase";
-import { ODDELKI_TV, VELJA_PRIPRAVLJENOST_DNI, kodaDela, kodaPregleda, kodaPripravljenosti, kodaWorkflowa, kodaZakljucenih } from "./tvIzpisi";
+import {
+  ODDELKI_TV,
+  VELJA_PRIORITETE_DNI,
+  VELJA_PRIPRAVLJENOST_DNI,
+  kodaDela,
+  kodaPregleda,
+  kodaPrioritet,
+  kodaPripravljenosti,
+  kodaWorkflowa,
+  kodaZakljucenih,
+} from "./tvIzpisi";
 
 const KOSARA = "fos-tv-viri";
 /** Širina slike strani (4K). */
@@ -399,6 +409,29 @@ export async function objaviPripravljenostNaTv(izvor = "sync"): Promise<{ oddelk
     });
     if (error) throw new Error(`${d.naziv}: ${error.message}`);
     oddelki.push(`${d.naziv} (${d.krovni.length} krovnih, ${strani.length} str.)`);
+  }
+  return { oddelki };
+}
+
+/**
+ * "Prioritete krovnih" na FIN:TV za vse oddelke z vklopljeno komponento (FinOS 031): za vsak krovni iz plana oddelka vse
+ * odpreme (prioriteteTv.ts). Samo animirana objava (podatki, FinOS 030) - PDF-ja ni. Velja VELJA_PRIORITETE_DNI dni.
+ */
+export async function objaviPrioriteteNaTv(izvor = "sync"): Promise<{ oddelki: string[] }> {
+  const danes = toIso(new Date());
+  const kode: OddelekKoda[] = [];
+  for (const o of ODDELKI_TV) if (await vklopljena(kodaPrioritet(o))) kode.push(o);
+  if (!kode.length) return { oddelki: [] };
+  const { pripraviPrioriteteTv } = await import("./prioriteteTv");
+  const veljaDo = addDays(danes, VELJA_PRIORITETE_DNI - 1);
+  const oddelki: string[] = [];
+  for (const d of await pripraviPrioriteteTv(kode)) {
+    const ok = await objaviPodatke(kodaPrioritet(d.koda), [d], `Production: ${izvor} · ${d.naziv}`, [danes], [veljaDo]).catch((e: Error) => {
+      throw new Error(`${d.naziv}: ${e.message}`);
+    });
+    if (!ok) throw new Error("V FinOS ni funkcije fos_tv_objavi_podatke - zaženi FinOS migracijo 030 (animirane objave).");
+    const odprem = d.krovni.reduce((s, k) => s + k.odpreme.length, 0);
+    oddelki.push(`${d.naziv} (${d.krovni.length} krovnih, ${odprem} odprem)`);
   }
   return { oddelki };
 }

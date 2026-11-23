@@ -17,6 +17,13 @@ export const kodaZakljucenih = (oddelek: OddelekKoda) => `fp_zakljuceni_krovni_$
 /** Koda komponente "Pripravljenost materiala" za oddelek (FinOS 029). */
 export const kodaPripravljenosti = (oddelek: OddelekKoda) => `fp_pripravljenost_mat_${oddelek.toLowerCase()}`;
 
+/** Koda komponente "Prioritete krovnih" za oddelek (FinOS 031). */
+export const kodaPrioritet = (oddelek: OddelekKoda) => `fp_prioritete_krovnih_${oddelek.toLowerCase()}`;
+/** Uvozi, po katerih se Prioritete krovnih samodejno objavijo na TV. */
+export const SYNC_PRIORITETE = ["narocila", "odpreme", "nalogi", "material"] as const;
+/** Koliko dni velja objava Prioritet krovnih (nova objava jo zamenja). */
+export const VELJA_PRIORITETE_DNI = 3;
+
 /** Uvozi, po katerih se Pripravljenost materiala samodejno objavi na TV. */
 export const SYNC_PRIPRAVLJENOST = ["izdaje", "material", "dobave", "nalogi"] as const;
 /** Koliko dni veljajo strani Pripravljenosti (sync je vsak delovni dan - po tem TV ne kaže zastarelih podatkov). */
@@ -59,6 +66,19 @@ export const tvIzpisiPripravljenosti = (naziv: (o: OddelekKoda) => string): TvIz
     kdaj: "Samodejno po vsakem uvozu Izdaj, Materiala, Naročil dobavitelju ali Delovnih nalogov (Sync na strani Podatki), po Shrani plan in z gumbom Sync na strani Podatki → Sync v TV. Sync teče v brskalniku s povezano mapo izvozov iz ERP.",
     velja: `${VELJA_PRIPRAVLJENOST_DNI} dni od objave (vsaka nova objava jih zamenja) - brez synca TV ne kaže zastarelih podatkov.`,
     prenos: "Izvoz → PDF - krovni v planu (ali PDF posameznega krovnega v razprti vrstici). Na strani so privzete izločene skupine materiala, kot na TV.",
+  }));
+
+/** Proizvodnja → Prioritete (vsak oddelek svoja komponenta). */
+export const tvIzpisiPrioritet = (naziv: (o: OddelekKoda) => string): TvIzpis[] =>
+  ODDELKI_TV.map((o) => ({
+    naslov: `Prioritete krovnih · ${naziv(o)}`,
+    koda: kodaPrioritet(o),
+    vsebina:
+      "Za vsak krovni nalog iz delovnega plana oddelka (z odprtimi kosi) vse odpreme, ki čakajo nanj: datum odpreme, kosi, družina, kupec in stanje (zamuja, danes, jutri, čez N dni, nalog zamuja). Zgoraj koliko kosov krovnega je naročenih, v koliko naročilih in koliko gre na zalogo. Enaka razdelitev kot na tej strani (potrjena naročila, samo izdelki) - iskanje številke krovnega pokaže iste odpreme.",
+    format: "Animirana scena na krovni (najnujnejši najprej), daljši seznam odprem čez več strani - nič se ne odreže.",
+    kdaj: "Samodejno po vsakem uvozu Naročil (VD200), Odprem (VD300), Delovnih nalogov ali Materiala (Sync na strani Podatki), po Shrani plan in z gumbom Sync na strani Podatki → Sync v TV.",
+    velja: `${VELJA_PRIORITETE_DNI} dni od objave (vsaka nova objava jo zamenja) - brez synca TV ne kaže zastarelih podatkov.`,
+    prenos: "Pogled Po krovnih → Izvoz (Excel / sporočilo) - isti podatki kot na TV.",
   }));
 
 /** Zasedenost → Delovni plan. */
