@@ -24,10 +24,10 @@ import { izracunajNaloge, naloziZadnjiUvoz, naloziZasOddelke } from "./zasedenos
 import { objaviPlanNaTv, type IzidObjave } from "./tvObjava";
 
 /**
- * Izračuna shranjen plan oddelka in ga objavi na FIN:TV (workflow + pregled, vsak teden od tekočega do konca plana).
- * Vrne objavljene dokumente (prazno = komponenti izklopljeni / plan ne sega v tekoči teden).
+ * Shranjen plan oddelka, izračunan kot na strani Delovni plan: postavitve z urami iz planiranih kosov in razpored po
+ * kapaciteti celic (od - do vsake postavitve). Uporabljata ga objava plana in Prioritete krovnih (krovni v planu tedna).
  */
-export async function objaviPlanOddelka(koda: OddelekKoda, napredek?: (korak: number, vseh: number) => void): Promise<IzidObjave> {
+export async function izracunajPlanOddelka(koda: OddelekKoda) {
   const danes = toIso(new Date());
   const [oddelki, uvoz, normativi, vseCelice, vsePostavitve, zaposleni] = await Promise.all([
     naloziZasOddelke(),
@@ -66,6 +66,15 @@ export async function objaviPlanOddelka(koda: OddelekKoda, napredek?: (korak: nu
     const d = razpored.get(p.id)?.do;
     return d && (!m || d > m) ? d : m;
   }, null);
+  return { danes, oddelek, celice, uvoz, normativi, krovniPoKljucu, kosiPostavitev, efektivne, razpored, zadnjiDan, steviloZaposlenih };
+}
+
+/**
+ * Izračuna shranjen plan oddelka in ga objavi na FIN:TV (workflow + pregled, vsak teden od tekočega do konca plana).
+ * Vrne objavljene dokumente (prazno = komponenti izklopljeni / plan ne sega v tekoči teden).
+ */
+export async function objaviPlanOddelka(koda: OddelekKoda, napredek?: (korak: number, vseh: number) => void): Promise<IzidObjave> {
+  const { oddelek, celice, uvoz, normativi, krovniPoKljucu, kosiPostavitev, efektivne, razpored, zadnjiDan, steviloZaposlenih } = await izracunajPlanOddelka(koda);
 
   // odpreme po nalogih (naročila FIFO) in družine normativov za pregled - ob napaki brez njih
   const [pri, odp, mat, sifrant] = await Promise.all([

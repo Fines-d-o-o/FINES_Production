@@ -74,7 +74,7 @@ export const tvIzpisiPrioritet = (naziv: (o: OddelekKoda) => string): TvIzpis[] 
     naslov: `Prioritete krovnih · ${naziv(o)}`,
     koda: kodaPrioritet(o),
     vsebina:
-      "Za vsak krovni nalog iz delovnega plana oddelka (z odprtimi kosi) vse odpreme, ki čakajo nanj: datum odpreme, kosi, družina, kupec in stanje (zamuja, danes, jutri, čez N dni, nalog zamuja). Zgoraj koliko kosov krovnega je naročenih, v koliko naročilih in koliko gre na zalogo. Enaka razdelitev kot na tej strani (potrjena naročila, samo izdelki) - iskanje številke krovnega pokaže iste odpreme.",
+      "Za vsak krovni nalog, ki je v delovnem planu oddelka v tekočem ali naslednjem tednu, vse odpreme po delovnih nalogih: dan odpreme in dni do nje (zamuja, danes, jutri, čez N dni, nalog zamuja), ident, cel naziv, delovni nalog, količina, kupec in lokacija - delavec najde prave kose. Zgoraj koliko kosov krovnega je naročenih, v koliko naročilih in koliko gre na zalogo. Enaka razdelitev kot na tej strani (potrjena naročila, samo izdelki) - iskanje številke krovnega pokaže iste odpreme.",
     format: "Animirana scena na krovni (najnujnejši najprej), daljši seznam odprem čez več strani - nič se ne odreže.",
     kdaj: "Samodejno po vsakem uvozu Naročil (VD200), Odprem (VD300), Delovnih nalogov ali Materiala (Sync na strani Podatki), po Shrani plan in z gumbom Sync na strani Podatki → Sync v TV.",
     velja: `${VELJA_PRIORITETE_DNI} dni od objave (vsaka nova objava jo zamenja) - brez synca TV ne kaže zastarelih podatkov.`,
