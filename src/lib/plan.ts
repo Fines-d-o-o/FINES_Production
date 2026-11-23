@@ -164,8 +164,18 @@ export async function shraniPlan({
   }
 }
 
-export async function shraniPrivzetoCelice(id: number, privzeto_zaposlenih: number) {
-  const { error } = await getSupabase().from("fp_delovna_mesta").update({ privzeto_zaposlenih }).eq("id", id);
+/**
+ * Shrani novo privzeto število zaposlenih celice. Dnevi z delom na planu, ki so doslej uporabljali privzeto
+ * (`dniZDelom`), dobijo dosedanje število zapisano posebej - sprememba privzetega jim ne spremeni kapacitete.
+ */
+export async function shraniPrivzetoCelice(id: number, privzeto_zaposlenih: number, dosedanje: number, dniZDelom: IsoDate[]) {
+  const sb = getSupabase();
+  const zamrznjeni = dniZDelom.map((datum) => ({ delovno_mesto_id: id, datum, st_zaposlenih: dosedanje, visible: true }));
+  for (const kos of kosi(zamrznjeni)) {
+    const { error } = await sb.from("fp_plan_zaposleni").upsert(kos, { onConflict: "delovno_mesto_id,datum" });
+    if (error) throw error;
+  }
+  const { error } = await sb.from("fp_delovna_mesta").update({ privzeto_zaposlenih }).eq("id", id);
   if (error) throw error;
 }
 

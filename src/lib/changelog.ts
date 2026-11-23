@@ -9,6 +9,13 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "39.02",
+    datum: "23. 11. 2026",
+    spremembe: [
+      "Delovni plan → Privzeti zaposleni: sprememba privzetega števila oseb (npr. Dodatno delo 1 → 0) ne spremeni več dni, na katerih so na planu krovni ali naloge - ti dnevi obdržijo dosedanje število oseb (zapiše se posebej za dan). Novo privzeto velja samo za dneve brez dela.",
+    ],
+  },
+  {
     verzija: "39.01",
     datum: "20. 11. 2026",
     spremembe: [

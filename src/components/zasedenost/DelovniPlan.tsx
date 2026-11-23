@@ -157,6 +157,12 @@ function preberiKontrolo() {
   }
 }
 
+/** Okno naloženih zaposlenih po dnevih (dni nazaj / naprej od danes). */
+const ZAPOSLENI_NAZAJ = 180;
+const ZAPOSLENI_NAPREJ = 400;
+const naloziZaposleneOkna = (danes: IsoDate) =>
+  naloziZaposlene(addDays(danes, -ZAPOSLENI_NAZAJ), addDays(danes, ZAPOSLENI_NAPREJ));
+
 async function naloziPodatke(): Promise<Podatki> {
   const danes = toIso(new Date());
   const [oddelki, u, normativi, celice, postavitve, zaposleni] = await Promise.all([
@@ -165,7 +171,7 @@ async function naloziPodatke(): Promise<Podatki> {
     naloziNormative(true),
     naloziCelice(danes),
     naloziPostavitve(),
-    naloziZaposlene(addDays(danes, -180), addDays(danes, 400)),
+    naloziZaposleneOkna(danes),
   ]);
   return { oddelki, uvoz: u.uvoz, nalogi: u.nalogi, normativi, celice, postavitve, zaposleni };
 }
@@ -306,8 +312,10 @@ function DelovniPlanInner({ koda }: { koda: OddelekKoda }) {
   });
 
   async function osveziCelice() {
-    const celice = await naloziCelice(toIso(new Date()));
-    setPodatki((p) => (p ? { ...p, celice } : p));
+    // Zaposleni tudi: ob spremembi privzetega se dnevi z delom zapišejo posebej
+    const danes = toIso(new Date());
+    const [celice, zaposleni] = await Promise.all([naloziCelice(danes), naloziZaposleneOkna(danes)]);
+    setPodatki((p) => (p ? { ...p, celice, zaposleni } : p));
   }
 
   if (!podatki) return <Loading />;
@@ -589,6 +597,20 @@ function PlanOddelka({
   const nerazporejeno = (k: Krovni) => stanja.get(k.kljuc)?.ostane ?? 0;
 
   const { razpored, zasedeno } = useMemo(() => razporedi(efektivne, kapaciteta), [efektivne, kapaciteta]);
+
+  /** Dnevi z delom na planu brez posebej vpisanih zaposlenih (v oknu naloženih zaposlenih) - ob spremembi privzetega obdržijo dosedanje. */
+  const dniZDelom = useCallback(
+    (celicaId: number) => {
+      const od = addDays(danes, -ZAPOSLENI_NAZAJ);
+      const doo = addDays(danes, ZAPOSLENI_NAPREJ);
+      return [...zasedeno]
+        .filter(([kljuc, ure]) => ure > 1e-6 && !(kljuc in zapEdits) && !zapMap.has(kljuc))
+        .map(([kljuc]) => kljuc.split("|"))
+        .filter(([id, d]) => Number(id) === celicaId && d >= od && d <= doo)
+        .map(([, d]) => d);
+    },
+    [zasedeno, zapEdits, zapMap, danes],
+  );
 
   // ---------- kontrola plana: planirani kosi in konec plana po nalogih ----------
   const planNalogov = useMemo(() => {
@@ -1171,6 +1193,7 @@ function PlanOddelka({
       <Modal open={nastavitveOdprte} title={`Privzeti zaposleni: ${oddelek.naziv}`} onClose={() => setNastavitveOdprte(false)}>
         <CeliceNastavitve
           celice={celice}
+          dniZDelom={dniZDelom}
           onShranjeno={async () => {
             setNastavitveOdprte(false);
             notify("success", "Privzeto število zaposlenih je shranjeno.");
@@ -2275,10 +2298,13 @@ function NovaNaloga({
 
 function CeliceNastavitve({
   celice,
+  dniZDelom,
   onShranjeno,
   onNapaka,
 }: {
   celice: Celica[];
+  /** Dnevi celice z delom na planu, ki uporabljajo privzeto število zaposlenih (ob spremembi ga obdržijo). */
+  dniZDelom: (celicaId: number) => IsoDate[];
   onShranjeno: () => void;
   onNapaka: (m: string) => void;
 }) {
@@ -2293,7 +2319,7 @@ function CeliceNastavitve({
       for (const c of celice) {
         const v = parseNum(vrednosti[c.id]);
         if (v === null || v < 0 || v > 99) throw new Error(`Neveljavna vrednost pri delovnem mestu ${c.naziv}.`);
-        if (v !== c.privzeto_zaposlenih) await shraniPrivzetoCelice(c.id, v);
+        if (v !== c.privzeto_zaposlenih) await shraniPrivzetoCelice(c.id, v, c.privzeto_zaposlenih, dniZDelom(c.id));
       }
       onShranjeno();
     } catch (e) {
