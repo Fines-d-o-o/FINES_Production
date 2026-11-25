@@ -9,6 +9,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "41.01",
+    datum: "24. 11. 2026",
+    spremembe: [
+      "Normativi: nov zavihek »Operacije proizvodnje« - za vsako šifro z normativom proizvodnje razdelitev na operacije (razrez, krivljenje, varjenje, brušenje ...) z delovnim mestom, vsota operacij in stanje (razdeljen / ni razdeljen / vsota ≠ P). Podatki se uvozijo po pregledu analize normativov.",
+      "Baza: šifrant operacij proizvodnje (fp_operacije) z privzetim delovnim mestom in tabela normativov operacij (fp_normativi_operacije) - migracija 040.",
+    ],
+  },
+  {
     verzija: "40.03",
     datum: "23. 11. 2026",
     spremembe: [

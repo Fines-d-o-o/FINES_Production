@@ -9,6 +9,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  Factory,
   FileUp,
   Info,
   Pencil,
@@ -45,7 +46,9 @@ import { useToast } from "@/components/ui/Toast";
 import { FilterCheckbox, FilterIskanje, FilterIzbira, FilterVrstica } from "@/components/ui/Filtri";
 import { SortTh, TabelaOkvir, useRazvrscanje } from "@/components/ui/Tabela";
 import { SaveBar } from "@/components/rutina/SaveBar";
+import { Zavihki } from "@/components/ui/Zavihki";
 import { CsvNavodila } from "./CsvNavodila";
+import { NormativiOperacije } from "./NormativiOperacije";
 import { SkupnaSpremembaOkno } from "./SkupnaSpremembaOkno";
 
 const NA_STRAN = 50;
@@ -91,8 +94,33 @@ const PRAZEN: Omit<Normativ, "id"> = {
 export type NovNormativ = { ident: string; naziv: string };
 
 export function NormativiUrejevalnik({ nov }: { nov?: NovNormativ }) {
+  const [pogled, setPogled] = useState<"NORMATIVI" | "OPERACIJE">("NORMATIVI");
   if (!supabaseConfigured) return <ConfigMissing />;
-  return <Urejevalnik nov={nov} />;
+  return (
+    <section className="flex flex-col">
+      <Zavihki
+        label="Pogled normativov"
+        value={pogled}
+        onChange={setPogled}
+        zavihki={[
+          { koda: "NORMATIVI", label: "Normativi", hint: "Normativi šifer po oddelkih (h/kos)", icon: Scale },
+          {
+            koda: "OPERACIJE",
+            label: "Operacije proizvodnje",
+            hint: "Razdelitev normativa proizvodnje na operacije in stroje",
+            icon: Factory,
+          },
+        ]}
+      />
+      <div className="fp-card rounded-tl-none p-3 sm:p-4">
+        {/* Urejevalnik ostane naložen (neshranjene spremembe se ob menjavi zavihka ne izgubijo) */}
+        <div className={pogled === "NORMATIVI" ? "" : "hidden"}>
+          <Urejevalnik nov={nov} />
+        </div>
+        {pogled === "OPERACIJE" && <NormativiOperacije />}
+      </div>
+    </section>
+  );
 }
 
 function Urejevalnik({ nov }: { nov?: NovNormativ }) {
