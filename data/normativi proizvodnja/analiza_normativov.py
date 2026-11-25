@@ -12,6 +12,7 @@ Izhod: "Analiza normativov proizvodnja.xlsx"
 
 Zagon:  py analiza_normativov.py
 """
+import getpass
 import json
 import math
 import os
@@ -110,7 +111,15 @@ DELOVNO_MESTO = {
 OP_IZRAZITO_P = {2, 3, 5, 6, 7, 8, 9, 10, 11, 14, 27, 28, 32, 47, 48, 50, 51, 53}
 OP_IZRAZITO_M = {15, 16, 17, 18, 19, 20, 23}
 PRAG_DELAVEC_P = 0.75
-DELAVEC_ROCNO = {}  # npr. {41: "M"} - šifra delavca ERP -> "P" / "M"
+# Odločitev 2026-11-25: Ilić in Steklačič sta v proizvodnji; Kranjc (zdaj na drugi poziciji),
+# Kastelic in Gaćić (ne delata več) - vse, kar so štempljali, gre v proizvodnjo.
+DELAVEC_ROCNO = {76: "P", 41: "P", 46: "P", 73: "P", 68: "P"}  # šifra delavca ERP -> "P" / "M"
+# Osnove (kovinski del) se v celoti delajo v proizvodnji - mešani operaciji gresta 100 % v proizvodnjo,
+# ne glede na delavca (štempljanje montaže na osnovah je verjetno napačno).
+VEDNO_P = re.compile(r"^\s*OSNOVA\b", re.I)
+# Elektronika (sestavi 099) ostane v celoti v montaži - mešani operaciji gresta 100 % v montažo (2026-11-25).
+# Kovinski deli z "elektro" v nazivu (096 / 097, npr. Plošča elektro OD-C, prirobnice) niso elektronika.
+VEDNO_M = re.compile(r"ELEKTRONIK|PLOŠČA ELEKTRO|DOZA ELEKTRO|KRMIL|KOMPLET POVEZOVALNI ELEKTRO", re.I)
 ODDELKI = [("P", "Proizvodnja"), ("M", "Montaža"), ("E", "Elektro"), ("T", "Testiranje")]
 
 # 110: v obseg spadajo samo proizvodni unikati (kovinski deli), ne celotne naprave
@@ -170,11 +179,22 @@ def preberi_normative_baza():
                 k, v = line.split("=", 1)
                 vals[k.strip()] = v.strip()
         url, key = vals["NEXT_PUBLIC_SUPABASE_URL"], vals["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"]
+        # Baza je dostopna samo prijavljenim (041) - prijava z uporabnikom aplikacije.
+        # E-pošta / geslo iz okolja (FINES_EMAIL, FINES_GESLO), sicer vprašanje v konzoli.
+        email = os.environ.get("FINES_EMAIL") or (input("E-pošta (prijava v bazo): ") if sys.stdin.isatty() else "")
+        geslo = os.environ.get("FINES_GESLO") or (getpass.getpass("Geslo: ") if sys.stdin.isatty() else "")
+        if not email or not geslo:
+            raise RuntimeError("ni prijave - nastavi FINES_EMAIL in FINES_GESLO")
+        req = urllib.request.Request(
+            f"{url}/auth/v1/token?grant_type=password", method="POST",
+            data=json.dumps({"email": email, "password": geslo}).encode(),
+            headers={"apikey": key, "Content-Type": "application/json"})
+        zeton = json.loads(urllib.request.urlopen(req, timeout=30).read())["access_token"]
         vrstice, off = [], 0
         while True:
             q = (f"{url}/rest/v1/spl_normativi?select=ident,naziv,normativ_skupni,normativ_proizvodnja,"
                  f"normativ_montaza,normativ_elektro,normativ_testiranje,visible&order=id&offset={off}&limit=1000")
-            req = urllib.request.Request(q, headers={"apikey": key})
+            req = urllib.request.Request(q, headers={"apikey": key, "Authorization": f"Bearer {zeton}"})
             del_ = json.loads(urllib.request.urlopen(req, timeout=30).read())
             vrstice += del_
             if len(del_) < 1000:
@@ -184,7 +204,7 @@ def preberi_normative_baza():
         d = d[d["visible"]]
         return d.set_index("ident")["normativ_skupni"].astype(float), "baza spl_normativi"
     except Exception as e:  # noqa: BLE001
-        print("Baza ni dosegljiva, uporabim Normativi_V2.xlsx:", e)
+        print("POZOR: baza ni dosegljiva, uporabim Normativi_V2.xlsx (lahko je zastarel):", e)
         d = pd.read_excel(KOREN / "data" / "Normativi_V2.xlsx", "Vsi normativi")
         return d.set_index(d.columns[0])["Normativ"].astype(float), "Normativi_V2.xlsx"
 
@@ -254,9 +274,12 @@ def analiziraj():
     p["SkupinaDel"] = p["Skupina"]
     mes = p["Skupina"].isin(MESANE)
     po_delavcu = p["Op"].map(lambda o: OPERACIJE.get(o, (None, None))[1] == "*")
+    vedno_p = set(n.loc[n["Naziv"].astype(str).map(lambda x: bool(VEDNO_P.match(x))), "DN"])
+    vedno_m = set(n.loc[n["Sifra"].str.startswith("099") &
+                        n["Naziv"].astype(str).map(lambda x: bool(VEDNO_M.search(x))), "DN"])
     p.loc[mes, "SkupinaDel"] = [
-        f"{sk} - {'proizvodnja' if (not pd_) or odd_del.get(dl, 'M') == 'P' else 'montaža'}"
-        for sk, dl, pd_ in zip(p.loc[mes, "Skupina"], p.loc[mes, "Delavec"], po_delavcu[mes])]
+        f"{sk} - {'montaža' if pd_ and dn in vedno_m else 'proizvodnja' if (not pd_) or dn in vedno_p or odd_del.get(dl, 'M') == 'P' else 'montaža'}"
+        for sk, dl, pd_, dn in zip(p.loc[mes, "Skupina"], p.loc[mes, "Delavec"], po_delavcu[mes], p.loc[mes, "DN"])]
     izl_ur = p[p["Skupina"].isna()].groupby("DN")["Ure"].sum()
     pv = p[p["Skupina"].notna()]
     ure_dn_sk = pv.pivot_table(index="DN", columns="Skupina", values="Ure", aggfunc="sum").fillna(0)
