@@ -11,7 +11,14 @@ import { izracunajNaloge, naloziZadnjiUvoz, naloziZasOddelke } from "./zasedenos
 export const DNI_ZAKLJUCENI = 30;
 
 export type ZakljuceniCelice = { naziv: string; krovni: KrovniZakljucen[] };
-export type ZakljuceniOddelka = { koda: OddelekKoda; naziv: string; od: IsoDate; celice: ZakljuceniCelice[] };
+export type ZakljuceniOddelka = {
+  koda: OddelekKoda;
+  naziv: string;
+  od: IsoDate;
+  celice: ZakljuceniCelice[];
+  /** Opis obdobja za PDF (npr. "zadnjih 90 dni" ali "vse"); privzeto zadnjih DNI_ZAKLJUCENI dni (FIN:TV). */
+  opis?: string;
+};
 
 /** Krovni po celicah (vrstni red celic; krovni brez celice na koncu). Celice brez zaključenih krovnih se izpustijo. */
 export function poCelicah(celice: Pick<Celica, "id" | "naziv">[], krovni: KrovniZakljucen[]): ZakljuceniCelice[] {

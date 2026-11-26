@@ -695,9 +695,9 @@ export const PISAVA = "16px";
 export const PISAVA_NASLOV = "21px";
 export const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** Prenese .eml (HTML telo + PDF priponka), ki ga Outlook odpre kot novo sporočilo. */
-export async function prenesiEmail(zadeva: string, html: string, pdf: Blob, imePdf: string, imeEml: string) {
-  const bajti = new Uint8Array(await pdf.arrayBuffer());
+/** Prenese .eml (HTML telo + neobvezna PDF priponka), ki ga Outlook odpre kot novo sporočilo. */
+export async function prenesiEmail(zadeva: string, html: string, pdf: Blob | null, imePdf: string, imeEml: string) {
+  const bajti = pdf ? new Uint8Array(await pdf.arrayBuffer()) : null;
   const meja = `----=_FINES_${Date.now().toString(36)}`;
   const deli = [
     "X-Unsent: 1",
@@ -711,12 +711,16 @@ export async function prenesiEmail(zadeva: string, html: string, pdf: Blob, imeP
     "Content-Transfer-Encoding: base64",
     "",
     vrstice76(base64(new TextEncoder().encode(html))),
-    `--${meja}`,
-    `Content-Type: application/pdf; name="${imePdf}"`,
-    `Content-Disposition: attachment; filename="${imePdf}"`,
-    "Content-Transfer-Encoding: base64",
-    "",
-    vrstice76(base64(bajti)),
+    ...(bajti
+      ? [
+          `--${meja}`,
+          `Content-Type: application/pdf; name="${imePdf}"`,
+          `Content-Disposition: attachment; filename="${imePdf}"`,
+          "Content-Transfer-Encoding: base64",
+          "",
+          vrstice76(base64(bajti)),
+        ]
+      : []),
     `--${meja}--`,
     "",
   ];

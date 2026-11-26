@@ -171,12 +171,13 @@ export async function ustvariZakljucenePdf(d: ZakljuceniOddelka): Promise<Blob> 
   const doc = await novDokument(`Zaključeni krovni · ${d.naziv}`);
   const { pdf, logo } = doc;
   const f: Pisave = doc;
-  const obdobje = `zaključeni od ${formatShort(d.od)} (zadnjih ${DNI_ZAKLJUCENI} dni)`;
+  const opis = d.opis ?? `zadnjih ${DNI_ZAKLJUCENI} dni`;
+  const obdobje = d.opis === "vse" ? "vsi zaključeni" : `zaključeni od ${formatShort(d.od)} (${opis})`;
 
   if (!d.celice.length) {
     const s = pdf.addPage([W, H]);
     naslov(s, f, logo, d, d.naziv, `Zaključeni krovni nalogi · ${obdobje}`);
-    sredina(s, `V zadnjih ${DNI_ZAKLJUCENI} dneh ni zaključenih krovnih iz delovnega plana.`, W / 2, H / 2, 14, f.lezeca, SIVA);
+    sredina(s, `V izbranem obdobju (${d.opis === "vse" ? "vse" : opis}) ni zaključenih krovnih iz delovnega plana.`, W / 2, H / 2, 14, f.lezeca, SIVA);
   }
   for (const c of d.celice) {
     const listov = Math.ceil(c.krovni.length / NAJVEC_STOLPCEV);

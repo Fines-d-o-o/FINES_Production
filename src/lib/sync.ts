@@ -9,6 +9,7 @@ import { SYNC_PRIORITETE, SYNC_PRIPRAVLJENOST } from "./tvIzpisi";
 import { preberiVd200Xlsx, preberiVd300Xlsx, shraniOdpUvoz, shraniPriUvoz } from "./prioritete";
 import { preberiNalogeXlsx, shraniUvoz } from "./zasedenost";
 import { preberiPorocanoXlsx, shraniPorocanoUvoz } from "./porocanoDelo";
+import { preberiPrevzemProizvodnjeXlsx, shraniPrevzemProizvodnjeUvoz } from "./prevzemProizvodnje";
 
 export type RezultatUvoza = { opis: string; opozorila: string[] };
 
@@ -61,10 +62,15 @@ const UVOZ: Record<SyncDatotekaKljuc, (f: File) => Promise<RezultatUvoza>> = {
     await shraniDobaveUvoz(f.name, p);
     return { opis: `${p.dobave.length} odprtih postavk naročil`, opozorila: p.opozorila };
   },
+  prevzemi_proizvodnje: async (f) => {
+    const p = await preberiPrevzemProizvodnjeXlsx(f);
+    await shraniPrevzemProizvodnjeUvoz(f.name, p);
+    return { opis: `${p.prevzemi.length} nalogov s prevzemom (${p.od ?? "?"} - ${p.do ?? "?"})`, opozorila: p.opozorila };
+  },
   izdaje: async (f) => {
     const p = await preberiIzdajeXlsx(f);
-    await shraniIzdajeUvoz(f.name, p);
-    return { opis: `${p.vrstice.length} vrstic, ${p.nalogov} aktivnih nalogov`, opozorila: p.opozorila };
+    const dodatno = await shraniIzdajeUvoz(f.name, p);
+    return { opis: `${p.vrstice.length} vrstic, ${p.nalogov} aktivnih nalogov`, opozorila: [...p.opozorila, ...dodatno] };
   },
 };
 

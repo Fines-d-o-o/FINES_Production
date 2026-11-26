@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Save, X } from "lucide-react";
 import {
   addDays,
   addMonths,
+  formatDatumUra,
   formatDayMonth,
   formatMonth,
   formatShort,
@@ -51,7 +52,23 @@ import {
   type KrovniZakljucen,
   type PripisanoDelo,
 } from "@/lib/produktivnostPlana";
-import { formatNum, formatRazlikaUr, formatUre } from "@/lib/stevila";
+import { formatNum, formatRazlikaUr, formatUre, formatVnos, parseNum } from "@/lib/stevila";
+import { formatEur } from "@/lib/produktivnost";
+import { lahkoZapustim, useNeshranjeno } from "@/lib/neshranjeno";
+import {
+  IZRACUN_OPORTUNITETNEGA,
+  OPIS_OPORTUNITETNEGA,
+  PRIVZETE_POSTAVKE,
+  VZROKI,
+  imaNormativ,
+  izracunajStrosek,
+  naloziOdstopanja,
+  naloziPostavke,
+  shraniOdstopanje,
+  shraniPostavke,
+  type Odstopanje,
+  type Postavke,
+} from "@/lib/odstopanjaKrovnih";
 import { supabaseConfigured } from "@/lib/supabase";
 import { izracunajNaloge, naloziZadnjiUvoz, naloziZasOddelke, type Nalog, type ZasOddelek } from "@/lib/zasedenost";
 import { tvIzpisiProduktivnosti } from "@/lib/tvIzpisi";
@@ -61,7 +78,7 @@ import { TvPovezava } from "@/components/TvPovezava";
 import { Zavihki } from "@/components/ui/Zavihki";
 import { usePoSyncu } from "@/components/SyncProvider";
 import { Button, IconButton } from "@/components/ui/Button";
-import { FilterCheckbox, FilterPreklopnik, FilterVrstica } from "@/components/ui/Filtri";
+import { FilterCheckbox, FilterIskanje, FilterIzbira, FilterPreklopnik, FilterVrstica } from "@/components/ui/Filtri";
 import { Izvoz } from "@/components/ui/Izvoz";
 import { Modal } from "@/components/ui/Modal";
 import { ConfigMissing, Loading, WarningText } from "@/components/ui/Notice";
@@ -74,6 +91,15 @@ const VISINA_GRAFA = 128; // px - stolpci enega delovnega mesta
 
 type Obdobje = "teden" | "mesec";
 type Pogled = "plan" | "zakljuceni";
+/** Obdobje zaključenih krovnih na strani (FIN:TV in PDF za TV ostaneta na DNI_ZAKLJUCENI). */
+type ObdobjeZak = "30" | "90" | "365" | "vse";
+const OBDOBJA_ZAK: { value: ObdobjeZak; label: string; hint: string }[] = [
+  { value: "30", label: "30 dni", hint: "Krovni, zaključeni v zadnjih 30 dneh (kot na FIN:TV)" },
+  { value: "90", label: "3 mesece", hint: "Krovni, zaključeni v zadnjih 90 dneh" },
+  { value: "365", label: "1 leto", hint: "Krovni, zaključeni v zadnjem letu" },
+  { value: "vse", label: "Vse", hint: "Vsi zaključeni krovni iz delovnega plana" },
+];
+const ZACETEK_VSE: IsoDate = "2000-01-01";
 
 /** Barve kategorij poročanega dela (stolpec desno od plana). */
 const BARVA: Record<Kategorija, string> = {
@@ -236,7 +262,8 @@ function ProduktivnostInner({ koda }: { koda: OddelekKoda }) {
 
   // Zaključeni krovni: štempljanje (vsi datumi) in kosi nalogov zaključenih krovnih iz plana - naloži se ob prvem ogledu
   const odprti = useMemo(() => new Set(osnova?.nalogi.map((n) => n.st_naloga) ?? []), [osnova]);
-  const odZakljucenih = addDays(danes, -DNI_ZAKLJUCENI);
+  const [obdobjeZak, setObdobjeZak] = useState<ObdobjeZak>(String(DNI_ZAKLJUCENI) as ObdobjeZak);
+  const odZakljucenih = obdobjeZak === "vse" ? ZACETEK_VSE : addDays(danes, -Number(obdobjeZak));
   useEffect(() => {
     if (pogled !== "zakljuceni" || zakPodatki || !plan || !zgodovina) return;
     let preklic = false;
@@ -346,7 +373,7 @@ function ProduktivnostInner({ koda }: { koda: OddelekKoda }) {
           {
             koda: "zakljuceni",
             label: "Zaključeni krovni",
-            hint: `Produktivnost krovnih nalogov, zaključenih v zadnjih ${DNI_ZAKLJUCENI} dneh`,
+            hint: "Produktivnost zaključenih krovnih nalogov (privzeto zadnjih 30 dni, izbira obdobja za nazaj)",
             icon: CheckCircle2,
           },
         ]}
@@ -355,7 +382,14 @@ function ProduktivnostInner({ koda }: { koda: OddelekKoda }) {
       {!oddelek ? (
         <div className="fp-card p-8 text-center text-ink-600">Oddelek ni najden.</div>
       ) : pogled === "zakljuceni" ? (
-        <ZakljuceniKrovni celice={celice} krovni={zakljuceni} od={odZakljucenih} oddelek={oddelek} />
+        <ZakljuceniKrovni
+          celice={celice}
+          krovni={zakljuceni}
+          od={odZakljucenih}
+          oddelek={oddelek}
+          obdobje={obdobjeZak}
+          onObdobje={setObdobjeZak}
+        />
       ) : (
         <>
           <div className={`grid items-start gap-4 ${panel ? "xl:grid-cols-[minmax(0,1fr)_380px]" : ""}`}>
@@ -492,30 +526,91 @@ const tonProduktivnosti = (p: number | null) =>
   p === null ? "border-ink-300 bg-ink-50" : p >= 0.995 ? "border-ok-500 bg-ok-50" : p >= 0.85 ? "border-warn-400 bg-warn-50" : "border-nok-500 bg-nok-50";
 const besediloNalogov = (n: number) => `${n} ${n === 1 ? "nalog" : n === 2 ? "naloga" : n <= 4 ? "nalogi" : "nalogov"}`;
 
-function ZakljuceniKrovni({ celice, krovni, od, oddelek }: { celice: Celica[]; krovni: KrovniZakljucen[] | null; od: IsoDate; oddelek: ZasOddelek }) {
-  const skupine = poCelicah(celice, krovni ?? []);
+function ZakljuceniKrovni({
+  celice,
+  krovni,
+  od,
+  oddelek,
+  obdobje,
+  onObdobje,
+}: {
+  celice: Celica[];
+  krovni: KrovniZakljucen[] | null;
+  od: IsoDate;
+  oddelek: ZasOddelek;
+  obdobje: ObdobjeZak;
+  onObdobje: (v: ObdobjeZak) => void;
+}) {
+  const [iskanje, setIskanje] = useState("");
+  const q = iskanje.trim().toLowerCase();
+  const najdeni = (krovni ?? []).filter(
+    (k) =>
+      !q ||
+      k.krovni.toLowerCase().includes(q) ||
+      k.nalogi.some((n) => n.st.toLowerCase().includes(q) || (n.naziv ?? "").toLowerCase().includes(q) || (n.ident ?? "").toLowerCase().includes(q)),
+  );
+  const skupine = poCelicah(celice, najdeni);
+  const opisObdobja = obdobje === "vse" ? "vse" : `zadnjih ${obdobje} dni`;
+
+  // Odstopanja (migracija 044): urne postavke in shranjene razlage oddelka; null pri postavkah = tabel še ni
+  const notify = useToast();
+  const [izbran, setIzbran] = useState<string | null>(null);
+  const [postavke, setPostavke] = useState<Postavke | null | undefined>(undefined);
+  const [odstopanja, setOdstopanja] = useState<Map<string, Odstopanje> | null>(null);
+  useEffect(() => {
+    let preklic = false;
+    Promise.all([naloziPostavke(), naloziOdstopanja(oddelek.koda)])
+      .then(([p, o]) => {
+        if (preklic) return;
+        setPostavke(p);
+        setOdstopanja(o ?? new Map());
+      })
+      .catch((e) => notify("error", `Napaka pri nalaganju odstopanj: ${(e as Error).message}`, 10000));
+    return () => {
+      preklic = true;
+    };
+  }, [oddelek.koda, notify]);
+  const izbranK = izbran ? (krovni ?? []).find((k) => k.krovni === izbran) ?? null : null;
+  const celicaIzbranega = izbranK ? (skupine.find((c) => c.krovni.includes(izbranK))?.naziv ?? "") : "";
+
   return (
     <div className="flex flex-col gap-4">
       <div className="fp-card flex flex-col gap-2 rounded-tl-none p-3 sm:p-4">
+        <div>
+          <h3 className="text-base font-bold text-ink-900">Zaključeni krovni nalogi · {oddelek.naziv}</h3>
+          <p className="text-xs text-ink-500">
+            Krovni iz delovnega plana, pri katerih so zaključeni vsi nalogi
+            {obdobje === "vse" ? "" : `, zadnje štempljanje od ${formatShort(od)} naprej`}. Krovni se vedno upošteva v celoti (vse ure, tudi
+            starejše). Štejejo samo ure na operacijah oddelka; zaključen nalog = narejena razpisana količina. FIN:TV vedno kaže zadnjih{" "}
+            {DNI_ZAKLJUCENI} dni.
+          </p>
+        </div>
         <FilterVrstica>
-          <div className="mr-auto min-w-[min(100%,18rem)] flex-1 self-center">
-            <h3 className="text-base font-bold text-ink-900">Zaključeni krovni nalogi · {oddelek.naziv}</h3>
-            <p className="text-xs text-ink-500">
-              Krovni iz delovnega plana, pri katerih so zaključeni vsi nalogi, zadnje štempljanje od {formatShort(od)} naprej. Krovni se vedno
-              upošteva v celoti (vse ure, tudi starejše). Štejejo samo ure na operacijah oddelka; zaključen nalog = narejena razpisana količina.
-            </p>
-          </div>
+          <FilterPreklopnik<ObdobjeZak> label="Zaključeni v obdobju" value={obdobje} onChange={onObdobje} options={OBDOBJA_ZAK} />
+          <FilterIskanje
+            value={iskanje}
+            onChange={setIskanje}
+            placeholder="Krovni, nalog, izdelek ..."
+            hint="Išči po krovnem, delovnem nalogu, nazivu ali šifri izdelka (npr. FBM)"
+          />
           <Izvoz
+            className="ml-auto"
             spomin="produktivnost-zakljuceni"
             formati={[
               {
                 koda: "pdf",
                 label: "PDF - zaključeni krovni",
-                hint: "Zaključeni krovni po celicah, stran 16:9 (tisk in FIN:TV)",
+                hint: "Prikazani zaključeni krovni (izbrano obdobje in iskanje) po celicah, stran 16:9",
                 disabled: krovni === null,
                 zakaj: "Podatki se še nalagajo",
                 akcija: async () =>
-                  (await import("@/lib/zakljuceniPdf")).prenesiZakljucenePdf({ koda: oddelek.koda, naziv: oddelek.naziv, od, celice: skupine }),
+                  (await import("@/lib/zakljuceniPdf")).prenesiZakljucenePdf({
+                    koda: oddelek.koda,
+                    naziv: oddelek.naziv,
+                    od,
+                    celice: skupine,
+                    opis: opisObdobja,
+                  }),
               },
             ]}
           />
@@ -544,42 +639,328 @@ function ZakljuceniKrovni({ celice, krovni, od, oddelek }: { celice: Celica[]; k
           <Loading />
         </div>
       ) : skupine.length === 0 ? (
-        <div className="fp-card p-8 text-center text-ink-600">V zadnjih {DNI_ZAKLJUCENI} dneh ni zaključenih krovnih iz delovnega plana.</div>
+        <div className="fp-card p-8 text-center text-ink-600">
+          {q
+            ? `Ni zaključenih krovnih, ki ustrezajo iskanju »${iskanje.trim()}« (${opisObdobja}).`
+            : obdobje === "vse"
+              ? "Ni zaključenih krovnih iz delovnega plana."
+              : `V zadnjih ${obdobje} dneh ni zaključenih krovnih iz delovnega plana.`}
+        </div>
       ) : (
-        skupine.map((c) => (
-          <section key={c.naziv} className="fp-card flex min-w-0 flex-col gap-3 p-3 sm:p-4">
-            <div className="flex items-baseline gap-2">
-              <h3 className="text-lg font-bold text-ink-900">{c.naziv}</h3>
-              <span className="text-sm text-ink-500">
-                {c.krovni.length} {c.krovni.length === 1 ? "zaključen krovni" : "zaključenih krovnih"} · po datumu zaključka
-              </span>
-            </div>
-            <div className="flex items-stretch gap-3 overflow-x-auto pb-2">
-              {c.krovni.map((k) => (
-                <StolpecKrovnega key={k.krovni} k={k} />
-              ))}
-            </div>
-          </section>
-        ))
+        <div className={`grid items-start gap-4 ${izbranK ? "xl:grid-cols-[minmax(0,1fr)_420px]" : ""}`}>
+          <div className="flex min-w-0 flex-col gap-4">
+            {skupine.map((c) => (
+              <section key={c.naziv} className="fp-card flex min-w-0 flex-col gap-3 p-3 sm:p-4">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-lg font-bold text-ink-900">{c.naziv}</h3>
+                  <span className="text-sm text-ink-500">
+                    {c.krovni.length} {c.krovni.length === 1 ? "zaključen krovni" : "zaključenih krovnih"} · po datumu zaključka · klik na krovni:
+                    strošek odstopanja in razlaga
+                  </span>
+                </div>
+                <div className="flex items-stretch gap-3 overflow-x-auto pb-2">
+                  {c.krovni.map((k) => (
+                    <StolpecKrovnega
+                      key={k.krovni}
+                      k={k}
+                      izbran={k.krovni === izbran}
+                      razlaga={odstopanja?.get(k.krovni) ?? null}
+                      onIzberi={() => lahkoZapustim() && setIzbran(k.krovni === izbran ? null : k.krovni)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+          {izbranK && postavke !== undefined && (
+            <PanelOdstopanja
+              key={izbranK.krovni}
+              k={izbranK}
+              celica={celicaIzbranega}
+              oddelek={oddelek}
+              postavke={postavke}
+              onPostavke={setPostavke}
+              obstojeci={odstopanja?.get(izbranK.krovni) ?? null}
+              onShranjeno={(o) => setOdstopanja((m) => new Map(m ?? []).set(o.krovni, o))}
+              onZapri={() => lahkoZapustim() && setIzbran(null)}
+            />
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function StolpecKrovnega({ k }: { k: KrovniZakljucen }) {
+// =====================================================================
+// ODSTOPANJE KROVNEGA - desni panel (strošek ur nad normativom, vzrok, razlaga, e-mail)
+// =====================================================================
+
+function PanelOdstopanja({
+  k,
+  celica,
+  oddelek,
+  postavke,
+  onPostavke,
+  obstojeci,
+  onShranjeno,
+  onZapri,
+}: {
+  k: KrovniZakljucen;
+  celica: string;
+  oddelek: ZasOddelek;
+  /** null = tabel še ni (migracija 044) - izračun s privzetimi postavkami, brez shranjevanja. */
+  postavke: Postavke | null;
+  onPostavke: (p: Postavke) => void;
+  obstojeci: Odstopanje | null;
+  onShranjeno: (o: Odstopanje) => void;
+  onZapri: () => void;
+}) {
+  const notify = useToast();
+  const imaTabele = postavke !== null;
+  const shranjenePostavke = postavke ?? PRIVZETE_POSTAVKE;
+  const [vnosPostavk, setVnosPostavk] = useState<Record<keyof Postavke, string>>(() => ({
+    cenaDela: formatVnos(shranjenePostavke.cenaDela),
+    cenaDelovnegaMesta: formatVnos(shranjenePostavke.cenaDelovnegaMesta),
+    oportunitetni: formatVnos(shranjenePostavke.oportunitetni),
+  }));
+  const [vzrok, setVzrok] = useState(obstojeci?.vzrok ?? "");
+  const [razlaga, setRazlaga] = useState(obstojeci?.razlaga ?? "");
+  const [shranjujem, setShranjujem] = useState(false);
+
+  // Trenutne postavke (vnos); neveljaven vnos = shranjena vrednost
+  const p: Postavke = {
+    cenaDela: parseNum(vnosPostavk.cenaDela) ?? shranjenePostavke.cenaDela,
+    cenaDelovnegaMesta: parseNum(vnosPostavk.cenaDelovnegaMesta) ?? shranjenePostavke.cenaDelovnegaMesta,
+    oportunitetni: parseNum(vnosPostavk.oportunitetni) ?? shranjenePostavke.oportunitetni,
+  };
+  const postavkeSpremenjene = (Object.keys(p) as (keyof Postavke)[]).some((x) => p[x] !== shranjenePostavke[x]);
+  const razlagaSpremenjena = vzrok !== (obstojeci?.vzrok ?? "") || razlaga.trim() !== (obstojeci?.razlaga ?? "");
+  const s = izracunajStrosek(k, p);
+  const normativ = imaNormativ(k);
+  const prihranek = s.razlika < 0;
+  const preveri = k.produktivnost !== null && (k.produktivnost > PREVERI_NAD || k.produktivnost < PREVERI_POD);
+  const ton = prihranek ? "text-ok-600" : s.razlika > 0 ? "text-nok-600" : "text-ink-700";
+  const znesek = (n: number) => formatEur(Math.abs(n));
+
+  async function shrani() {
+    setShranjujem(true);
+    try {
+      if (postavkeSpremenjene) {
+        await shraniPostavke(p);
+        onPostavke(p);
+      }
+      if (razlagaSpremenjena || !obstojeci || postavkeSpremenjene) {
+        const o = await shraniOdstopanje({ k, oddelek: oddelek.koda, celica, postavke: p, vzrok: vzrok || null, razlaga, obstojeci });
+        onShranjeno(o);
+      }
+      notify("success", `Odstopanje krovnega ${k.krovni} shranjeno.`);
+    } catch (e) {
+      notify("error", `Shranjevanje ni uspelo: ${(e as Error).message}`, 10000);
+    } finally {
+      setShranjujem(false);
+    }
+  }
+
+  const vrstice: { naziv: string; hint: string; kljuc: keyof Postavke; znesek: number }[] = [
+    { naziv: "Delo", hint: "Strošek ure delavca (€/h)", kljuc: "cenaDela", znesek: s.delo },
+    { naziv: "Delovno mesto / stroj", hint: "Strošek ure delovnega mesta oz. stroja (€/h)", kljuc: "cenaDelovnegaMesta", znesek: s.delovnoMesto },
+    { naziv: "Oportunitetni strošek", hint: `${OPIS_OPORTUNITETNEGA} ${IZRACUN_OPORTUNITETNEGA}`, kljuc: "oportunitetni", znesek: s.oportunitetni },
+  ];
+  const neshranjeno = postavkeSpremenjene || razlagaSpremenjena || (!obstojeci && imaTabele);
+  // Vpisana razlaga / postavke se ne izgubijo ob kliku na drug krovni, zaprtju panela ali odhodu s strani
+  useNeshranjeno(imaTabele && (postavkeSpremenjene || razlagaSpremenjena));
+  const izvozPodatki = { k, oddelek: oddelek.koda, oddelekNaziv: oddelek.naziv, celica, postavke: p, vzrok: vzrok || null, razlaga };
+  const polje =
+    "h-9 w-20 rounded-lg border border-ink-200 px-2 text-right text-sm tabular-nums focus:border-fines-500 focus:outline-none focus:ring-2 focus:ring-fines-100";
+
+  return (
+    <div className="fp-card order-first flex min-h-0 flex-col gap-3 p-3 sm:p-4 xl:order-none xl:sticky xl:top-20 xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto">
+      <div className="flex items-start gap-2">
+        <div className="mr-auto min-w-0">
+          <h3 className="text-lg font-bold text-ink-900">Odstopanje · krovni {k.krovni}</h3>
+          <p className="text-xs text-ink-500">
+            {oddelek.naziv} · {celica} · zaključen {formatShort(k.zakljucen)}
+          </p>
+        </div>
+        <IconButton hint="Zapri panel odstopanja krovnega" variant="ghost" icon={X} onClick={onZapri} />
+      </div>
+
+      {!imaTabele && (
+        <WarningText>
+          Shranjevanje še ni mogoče - v Supabase zaženi skripto <strong>044_odstopanja_krovnih.sql</strong>. Izračun je s privzetimi postavkami.
+        </WarningText>
+      )}
+      {preveri && (
+        <WarningText>
+          Produktivnost {fmtPct(k.produktivnost)} je pod {Math.round(PREVERI_POD * 100)} % ali nad {Math.round(PREVERI_NAD * 100)} % - verjetno
+          napaka štempljanja. Pred pošiljanjem preveri štempljanje.
+        </WarningText>
+      )}
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg bg-ink-50 px-2 py-2" title="Normativne ure nalogov z normativom (kosi × normativ oddelka)">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-ink-500">Normativ</div>
+          <div className="text-lg font-bold tabular-nums text-ink-900">{formatUre(k.normUre)} h</div>
+        </div>
+        <div className="rounded-lg bg-ink-50 px-2 py-2" title="Štempljane ure na operacijah oddelka (nalogi z normativom)">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-ink-500">Štempljano</div>
+          <div className="text-lg font-bold tabular-nums text-ink-900">{formatUre(k.ure)} h</div>
+        </div>
+        <div className="rounded-lg bg-ink-50 px-2 py-2" title="Štempljano - normativ (+ = več ur od normativa)">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-ink-500">Razlika</div>
+          <div className={`text-lg font-bold tabular-nums ${ton}`}>{normativ ? formatRazlikaUr(s.razlika) : "–"}</div>
+        </div>
+      </div>
+
+      {/* strošek - vrstice postavk (urna postavka se ureja v vrstici) */}
+      {!normativ ? (
+        <p className="rounded-lg bg-ink-50 px-3 py-2 text-sm text-ink-600">
+          Krovni nima normativnih ur za oddelek (ni normativa) - strošek odstopanja ni izračunan. Razlago lahko vseeno shraniš.
+        </p>
+      ) : (
+      <div className="flex flex-col gap-1">
+        <div className="text-xs font-semibold text-ink-600">{prihranek ? "Prihranek (manj ur od normativa)" : "Strošek ur nad normativom"}</div>
+        <div className="flex flex-col divide-y divide-ink-100 rounded-lg border border-ink-200">
+          {vrstice.map((v) => (
+            <div key={v.kljuc} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+              <div className="min-w-0 flex-1" title={v.hint}>
+                {v.naziv}
+                <div className="text-[11px] tabular-nums text-ink-500">{formatUre(Math.abs(s.razlika))} h × €/h</div>
+              </div>
+              <input
+                inputMode="decimal"
+                value={vnosPostavk[v.kljuc]}
+                disabled={!imaTabele}
+                onChange={(e) => setVnosPostavk((x) => ({ ...x, [v.kljuc]: e.target.value }))}
+                title={`${v.naziv} v €/h - sprememba velja za vse krovne`}
+                aria-label={`${v.naziv} €/h`}
+                className={`${polje} ${parseNum(vnosPostavk[v.kljuc]) === null ? "border-nok-500" : ""}`}
+              />
+              <span className="text-xs text-ink-500">€/h</span>
+              <span className={`w-24 whitespace-nowrap text-right font-semibold tabular-nums ${ton}`}>{znesek(v.znesek)}</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2 bg-ink-50 px-2 py-2">
+            <span className="flex-1 font-bold">{prihranek ? "Prihranek skupaj" : "Strošek odstopanja skupaj"}</span>
+            <span className={`whitespace-nowrap text-xl font-bold tabular-nums ${ton}`}>{znesek(s.skupaj)}</span>
+          </div>
+        </div>
+        <p className="text-[11px] text-ink-500" title={IZRACUN_OPORTUNITETNEGA}>
+          {OPIS_OPORTUNITETNEGA} Izračun postavke: {IZRACUN_OPORTUNITETNEGA}
+        </p>
+        {postavkeSpremenjene && (
+          <p className="text-[11px] font-semibold text-warn-700">Spremenjene urne postavke se ob shranjevanju shranijo za vse krovne.</p>
+        )}
+      </div>
+      )}
+
+      <FilterIzbira<string>
+        label="Vzrok odstopanja"
+        value={vzrok}
+        onChange={setVzrok}
+        hint="Izberi glavni vzrok odstopanja od normativa"
+        options={[{ value: "", label: "– izberi vzrok –" }, ...VZROKI.map((v) => ({ value: v, label: v }))]}
+      />
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-semibold text-ink-600">Razlaga</span>
+        <textarea
+          value={razlaga}
+          onChange={(e) => setRazlaga(e.target.value)}
+          rows={5}
+          disabled={!imaTabele}
+          placeholder="Kaj se je zgodilo, zakaj več ur in kaj bomo naredili drugače ..."
+          title="Razlaga odstopanja - gre v e-mail in se shrani"
+          className="w-full rounded-lg border border-ink-200 px-2 py-2 text-sm focus:border-fines-500 focus:outline-none focus:ring-2 focus:ring-fines-100 disabled:bg-ink-50"
+        />
+      </label>
+      {obstojeci && (
+        <p className="text-[11px] text-ink-500" title={`Ustvaril ${obstojeci.avtor ?? "–"} ${formatDatumUra(obstojeci.created_at)}`}>
+          Shranjeno {formatDatumUra(obstojeci.updated_at)} · {obstojeci.uredil ?? obstojeci.avtor ?? "–"} · strošek ob shranjevanju{" "}
+          {formatEur(Math.abs(obstojeci.strosek_skupaj))}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-end justify-end gap-2 border-t border-ink-100 pt-3">
+        <Button
+          hint="Shrani vzrok, razlago in izračun odstopanja"
+          variant="success"
+          icon={Save}
+          disabled={!imaTabele || !neshranjeno || shranjujem || Object.values(vnosPostavk).some((v) => parseNum(v) === null)}
+          onClick={shrani}
+          className="mr-auto"
+        >
+          Shrani
+        </Button>
+        <Izvoz
+          spomin="produktivnost-odstopanje"
+          formati={[
+            {
+              koda: "eml",
+              label: "E-mail (Outlook)",
+              hint: "Prenesi e-mail za Outlook s PDF v priponki",
+              variant: "sync",
+              disabled: !normativ || (imaTabele && neshranjeno),
+              zakaj: normativ ? "Najprej shrani spremembe" : "Krovni nima normativa - ni odstopanja za pošiljanje",
+              akcija: async () => (await import("@/lib/odstopanjaEmail")).prenesiEmailOdstopanja(izvozPodatki),
+            },
+            {
+              koda: "pdf",
+              label: "PDF - odstopanje",
+              hint: "Prenesi PDF odstopanja: izračun, razlaga, nalogi",
+              disabled: !normativ || (imaTabele && neshranjeno),
+              zakaj: normativ ? "Najprej shrani spremembe" : "Krovni nima normativa - ni odstopanja za izvoz",
+              akcija: async () => (await import("@/lib/odstopanjaEmail")).prenesiOdstopanjePdf(izvozPodatki),
+            },
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function StolpecKrovnega({
+  k,
+  izbran,
+  razlaga,
+  onIzberi,
+}: {
+  k: KrovniZakljucen;
+  izbran: boolean;
+  razlaga: Odstopanje | null;
+  onIzberi: () => void;
+}) {
   const steti = k.nalogi.filter((n) => !n.izlocen);
   const izloceni = k.nalogi.filter((n) => n.izlocen);
   const hoverKrovnega = [
     `Krovni ${k.krovni}`,
     `Normativ ${formatUre(k.normUre)} h · štempljano ${formatUre(k.ure)} h`,
     k.prviDan ? `Štempljanje v oddelku od ${formatShort(k.prviDan)}, zaključen ${formatShort(k.zakljucen)}` : `Zaključen ${formatShort(k.zakljucen)}`,
-  ].join("\n");
+    razlaga ? `Razlaga shranjena${razlaga.vzrok ? `: ${razlaga.vzrok}` : ""}` : null,
+    "Klik: strošek odstopanja in razlaga",
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
-    <div className="flex min-w-[15rem] max-w-[24rem] flex-1 shrink-0 flex-col overflow-hidden rounded-xl border border-ink-200 bg-white">
+    <button
+      type="button"
+      onClick={onIzberi}
+      aria-pressed={izbran}
+      className={`flex min-w-[15rem] max-w-[24rem] flex-1 shrink-0 flex-col overflow-hidden rounded-xl border bg-white text-left transition-colors ${
+        izbran ? "border-fines-500 ring-2 ring-fines-500" : "border-ink-200 hover:border-fines-500"
+      }`}
+    >
       {/* krovni: velik prikaz produktivnosti */}
-      <div className={`border-b-4 px-3 py-3 ${tonProduktivnosti(k.produktivnost)}`} title={hoverKrovnega}>
+      <div className={`w-full border-b-4 px-3 py-3 ${tonProduktivnosti(k.produktivnost)}`} title={hoverKrovnega}>
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-base font-bold text-ink-900">{k.krovni}</span>
+          {razlaga && (
+            <span
+              className="rounded-full bg-ok-500 px-2 py-0.5 text-[10px] font-bold text-white"
+              title={`Razlaga odstopanja shranjena${razlaga.vzrok ? ` - ${razlaga.vzrok}` : ""}`}
+            >
+              razlaga
+            </span>
+          )}
           <span className="ml-auto text-xs text-ink-500">zaključen {formatDayMonth(k.zakljucen)}</span>
         </div>
         <div className="mt-2 flex items-center gap-2">
@@ -651,7 +1032,7 @@ function StolpecKrovnega({ k }: { k: KrovniZakljucen }) {
           {besediloNalogov(izloceni.length)} ni štetih (brez štempljanja v oddelku ali brez kosov)
         </div>
       )}
-    </div>
+    </button>
   );
 }
 

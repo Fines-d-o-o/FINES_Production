@@ -9,6 +9,41 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    verzija: "43.01",
+    datum: "26. 11. 2026",
+    spremembe: [
+      "Produktivnost → Zaključeni krovni: klik na krovni odpre desni panel »Odstopanje« - strošek ur nad normativom (delo 25 €/h + delovno mesto 25 €/h + oportunitetni strošek = izgubljen dobiček na uro kapacitete, privzeto 200 €/h). Urne postavke se urejajo v panelu in veljajo za vse krovne. Manj ur od normativa = prihranek (zeleno).",
+      "Vzrok odstopanja (seznam) in razlaga se shranita v bazo s posnetkom ur, postavk in zneskov (kdo / kdaj); krovni s shranjeno razlago ima značko »razlaga«. Potrebna migracija 044_odstopanja_krovnih.sql.",
+      "Izvoz »E-mail (Outlook)«: prenese .eml, ki ga Outlook odpre kot novo sporočilo (prejemnik prazen) - navadno besedilo brez tabel (»Pozdravljeni,«, prazne vrstice za uvod, ure, strošek in nalogi v alinejah, »Lep pozdrav,«), ki se v Outlooku ureja kot običajen e-mail; vse podrobnosti v PDF priponki. Izvoz »PDF - odstopanje« prenese samo PDF.",
+    ],
+  },
+  {
+    verzija: "42.03",
+    datum: "26. 11. 2026",
+    spremembe: [
+      "Produktivnost → Zaključeni krovni: izbira obdobja za nazaj (30 dni, 3 mesece, 1 leto, vse) in iskanje po krovnem, nalogu, nazivu ali šifri izdelka. FIN:TV ostane na zadnjih 30 dneh; PDF izvozi prikazano.",
+      "Delovni plan: okno krovnega pokaže tudi zaključene naloge (iz prejšnjih uvozov) z oznako »zaključen« - zaključen krovni ni več videti prazen. Ko so zaključeni vsi nalogi, okno opozori, naj krovnega ne odstranjuješ (šteje se v Zaključene krovne).",
+    ],
+  },
+  {
+    verzija: "42.02",
+    datum: "26. 11. 2026",
+    spremembe: [
+      "Višek materiala: nova kontrola 3 - prevzem iz proizvodnje. Če je z naloga prevzetih manj kosov, kot je razpisanih (npr. 9 od 10 peči), izračuna material za neizdelane kose in ga prišteje k razlagi viška; pri aktivnem nalogu opozori, da so kosi morda še v delu. Kontrola zaloge je zdaj 4.",
+      "Sync: nov izvoz »Prevzem iz proizvodnje« (Prevzem_proizvodnja.xlsx) - potrebna migracija 043_prevzem_proizvodnje.sql.",
+    ],
+  },
+  {
+    verzija: "42.01",
+    datum: "26. 11. 2026",
+    spremembe: [
+      "Proizvodnja → Orodja: nova stran »Višek materiala« (testna verzija) - izbereš krovni ali delovni nalog (tudi zaključen), z »Dodaj artikel« vpišeš idente in kose viška ter klikneš »Preveri«.",
+      "Kontrola 1 - kosovnice: koliko kosov identa gre na izdelek vsakega naloga, mesta v kosovnici in primerjava s podobnimi izdelki (podoben naziv; isti ident ali enakovredna komponenta). Ocena je vedno »verjetno pravilna« / »verjetno napačna«.",
+      "Kontrola 2 - izdani material: izdano na nalog proti planu DN in trenutni kosovnici (razlika po nalogih, opozorilo, če se je kosovnica spremenila po razpisu). Kontrola 3 - matična zaloga za kontrolo skladiščnika in aktivni nalogi, ki ident še potrebujejo. Na vrhu predlog, kaj narediti z viškom.",
+      "Uvoz Izdaj v proizvodnjo shrani tudi zaključene naloge zadnjih 13 mesecev (za Višek materiala; Doizdaja in Pripravljenost ostaneta na aktivnih). Potrebna migracija 042_visek_materiala.sql in ponoven uvoz Izdaj.",
+    ],
+  },
+  {
     verzija: "41.01",
     datum: "24. 11. 2026",
     spremembe: [

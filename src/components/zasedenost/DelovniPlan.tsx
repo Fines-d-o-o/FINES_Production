@@ -59,6 +59,7 @@ import {
   type ZaposleniDan,
 } from "@/lib/plan";
 import { naloziMaterial, type Material } from "@/lib/material";
+import { naloziNalogeKrovnih, type NalogKrovnega } from "@/lib/porocanoDelo";
 import {
   izracunajPrioritete,
   naloziZadnjiOdpUvoz,
@@ -1403,7 +1404,7 @@ function CelicaVrstica({
         const imaPresezek = crtasti.some(Boolean);
         const opis = [
           p.prosta ? `Dodatno delo: ${p.krovni_dn}` : `Krovni ${p.krovni_dn}`,
-          p.prosta ? null : !k ? "ni v zadnjem uvozu" : delni ? `${delni} nalogov (${p.nalogi!.join(", ")})` : `${k.nalogi.length} nalogov`,
+          p.prosta ? null : !k ? "zaključen (ni v zadnjem uvozu nalogov)" : delni ? `${delni} nalogov (${p.nalogi!.join(", ")})` : `${k.nalogi.length} nalogov`,
           delniKosi.length
             ? `delni kosi: ${delniKosi.map((n) => `${n.st_naloga} ${formatNum(kosi?.get(n.st_naloga) ?? 0)}/${formatNum(n.preostala)}`).join(", ")}`
             : null,
@@ -1902,6 +1903,28 @@ function UrediPostavitev({
   const ureVsebine = !kosSpremenjen && zaklenjena ? postavitev.ure : krovni ? ureIzNalogov : postavitev.ure;
   // Vključeni nalogi, ki jih ni več v uvozu (zaključeni) - ostanejo v postavitvi
   const brezUvoza = postavitev.nalogi?.filter((st) => !vsi.some((n) => n.st_naloga === st)) ?? [];
+  // Nalogi krovnega iz vseh uvozov: zaključeni (ni jih več v zadnjem uvozu) se pokažejo posebej - sicer je krovni videti prazen
+  const [zgodovina, setZgodovina] = useState<NalogKrovnega[] | null>(null);
+  useEffect(() => {
+    if (prosta) return;
+    let preklic = false;
+    naloziNalogeKrovnih([postavitev.krovni_dn])
+      .then((z) => !preklic && setZgodovina(z))
+      .catch(() => !preklic && setZgodovina([]));
+    return () => {
+      preklic = true;
+    };
+  }, [prosta, postavitev.krovni_dn]);
+  const zakljuceniNalogi = [
+    ...new Map(
+      (zgodovina ?? [])
+        .filter((n) => !vsi.some((v) => v.st_naloga === n.st_naloga))
+        .filter((n) => !postavitev.nalogi || postavitev.nalogi.includes(n.st_naloga))
+        .map((n) => [n.st_naloga, n]),
+    ).values(),
+  ].sort((a, b) => a.st_naloga.localeCompare(b.st_naloga));
+  const brezUvozaNeznani = brezUvoza.filter((st) => !zakljuceniNalogi.some((n) => n.st_naloga === st));
+  const vsiZakljuceni = !prosta && !krovni && zakljuceniNalogi.length > 0;
   const vseVkljuceno = vsi.every((n) => (kos[n.st_naloga] ?? 0) >= najvec(n));
 
   const preklopi = (n: NalogIzracun) => spremeniKos((k) => ({ ...k, [n.st_naloga]: vkljucen(n.st_naloga) ? 0 : najvec(n) }));
@@ -1995,8 +2018,17 @@ function UrediPostavitev({
           <Povzetek label="ure oddelka" vrednost={`${formatUre(rocne ? (ureNum ?? 0) : ureVsebine)} h`} />
           {!prosta && <Povzetek label="rok izdelave" vrednost={krovni?.rok ? formatShort(krovni.rok) : "–"} />}
         </div>
-        {!krovni && !prosta && (
-          <p className="rounded-lg bg-warn-50 px-3 py-2 text-warn-700">Krovni nalog ni v zadnjem uvozu (morda je že zaključen).</p>
+        {vsiZakljuceni ? (
+          <p className="rounded-lg bg-ok-50 px-3 py-2 text-ok-700">
+            Krovni je zaključen - vsi nalogi so zaključeni (ni jih več v uvozu nalogov). Ne odstranjuj ga iz plana: krovni iz plana se
+            šteje v Produktivnost → Zaključeni krovni (in FIN:TV).
+          </p>
+        ) : (
+          !krovni &&
+          !prosta &&
+          zgodovina !== null && (
+            <p className="rounded-lg bg-warn-50 px-3 py-2 text-warn-700">Krovni nalog ni v zadnjem uvozu (morda je že zaključen).</p>
+          )
         )}
         {napredek && napredek.razpisano > 0 && (
           <p className="text-ink-600">
@@ -2124,14 +2156,32 @@ function UrediPostavitev({
                 </tbody>
               </table>
             </div>
-            {brezUvoza.length > 0 && (
-              <p className="text-xs text-ink-500">{brezUvoza.length} vključenih nalogov ni več v uvozu (zaključeni).</p>
+            {brezUvozaNeznani.length > 0 && (
+              <p className="text-xs text-ink-500">
+                {brezUvozaNeznani.length} vključenih nalogov ni več v uvozu (zaključeni): {brezUvozaNeznani.join(", ")}.
+              </p>
             )}
             {!rocne && izbrani.length > 0 && ureIzNalogov <= 0 && (
               <p className="rounded-lg bg-warn-50 px-3 py-2 text-xs text-warn-700">
                 Izbrani nalogi nimajo ur tega oddelka (ni normativa ali so izdelani) - vpiši ročne ure.
               </p>
             )}
+          </div>
+        )}
+
+        {zakljuceniNalogi.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="text-xs font-semibold text-ink-600">Zaključeni nalogi krovnega ({zakljuceniNalogi.length})</div>
+            <ul className="divide-y divide-ink-100 rounded-lg border border-ink-100 text-xs">
+              {zakljuceniNalogi.map((n) => (
+                <li key={n.st_naloga} className="flex items-baseline gap-2 px-2 py-1 text-ink-500" title={`Nalog ${n.st_naloga} ni več v uvozu nalogov - zaključen`}>
+                  <span className="font-mono">{n.st_naloga}</span>
+                  <span className="whitespace-nowrap font-mono">{n.koda_artikla}</span>
+                  <span className="min-w-0 flex-1 truncate">{n.naziv_artikla}</span>
+                  <span className="rounded-full bg-ok-50 px-2 font-semibold text-ok-600">zaključen</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

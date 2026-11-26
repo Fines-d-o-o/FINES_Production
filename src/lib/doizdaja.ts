@@ -63,8 +63,35 @@ export type IzdajeUvozPregled = {
   vrstice: IzdajaVrstica[];
   nalogov: number;
   zakljucenih: number;
+  /** Material zaključenih nalogov zadnjih ~13 mesecev - za Višek materiala (fp_vis_izdaje). */
+  zakljuceneVrstice: ZakljucenaIzdaja[];
   opozorila: string[];
 };
+
+/** Vrstica zaključenega naloga: porabljeno / planirano NULL = izvoz nima podatka (ni 0). */
+export type ZakljucenaIzdaja = {
+  st_naloga: string;
+  opis: string | null;
+  koda_artikla: string | null;
+  naziv_artikla: string | null;
+  status: string | null;
+  status_naloga: string | null;
+  rok_izdelave: IsoDate | null;
+  razpisana_kolicina: number;
+  ident: string;
+  naziv: string | null;
+  skupina: string | null;
+  skl: string | null;
+  em: string | null;
+  porabljeno: number | null;
+  planirano: number | null;
+  za_izdajo: number | null;
+};
+
+/** Zaključeni nalogi za Višek materiala: rok izdelave v zadnjih 400 dneh (brez roka: nalog letos ali lani). */
+const ZAKLJUCENI_DNI = 400;
+/** Že shranjen zaključen nalog se ob uvozu posodobi, če je rok v zadnjih 60 dneh (povratnice po zaključku). */
+const ZAKLJUCENI_POSODOBI_DNI = 60;
 export type PrevzemiUvozPregled = {
   prevzemi: Prevzem[];
   od: IsoDate | null;
@@ -168,6 +195,9 @@ export async function preberiIzdajeXlsx(file: File): Promise<IzdajeUvozPregled> 
   const vrstice: IzdajaVrstica[] = [];
   const nalogi = new Set<string>();
   const zakljuceni = new Set<string>();
+  const zakljuceneVrstice: ZakljucenaIzdaja[] = [];
+  const odZakljucenih = addDays(todayWorkday(), -ZAKLJUCENI_DNI);
+  const leta = new Set([0, 1].map((n) => String((new Date().getFullYear() - n) % 100).padStart(2, "0")));
   for (const r of rows.slice(glavaIdx + 1)) {
     const v: Partial<Record<keyof IzdajaVrstica, unknown>> = {};
     for (const [i, polje] of indeksi) v[polje] = r[i];
@@ -177,6 +207,26 @@ export async function preberiIzdajeXlsx(file: File): Promise<IzdajeUvozPregled> 
     const status = txt(v.status);
     if (!jeAktiven(status)) {
       zakljuceni.add(nalog);
+      const rok = parseAnyDate(v.rok_izdelave);
+      if (status && (rok ? rok >= odZakljucenih : leta.has(nalog.slice(0, 2))))
+        zakljuceneVrstice.push({
+          st_naloga: nalog,
+          opis: txt(v.opis),
+          koda_artikla: txt(v.koda_artikla),
+          naziv_artikla: txt(v.naziv_artikla),
+          status,
+          status_naloga: txt(v.status_naloga),
+          rok_izdelave: rok,
+          razpisana_kolicina: st(v.razpisana_kolicina),
+          ident,
+          naziv: txt(v.naziv),
+          skupina: txt(v.skupina),
+          skl: txt(v.skl),
+          em: txt(v.em),
+          porabljeno: parseNum(v.porabljeno),
+          planirano: parseNum(v.planirano),
+          za_izdajo: parseNum(v.za_izdajo),
+        });
       continue;
     }
     nalogi.add(nalog);
@@ -212,6 +262,7 @@ export async function preberiIzdajeXlsx(file: File): Promise<IzdajeUvozPregled> 
     vrstice,
     nalogov: nalogi.size,
     zakljucenih: zakljuceni.size,
+    zakljuceneVrstice,
     opozorila,
   };
 }
@@ -309,15 +360,49 @@ async function shraniUvozDoi<T extends object>(
   }
   const { error: e2 } = await sb.from(tabelaUvozov).update({ aktiven: true }).eq("id", uvoz.id);
   if (e2) throw e2;
+  return uvoz.id as number;
 }
 
-export async function shraniIzdajeUvoz(datoteka: string, p: IzdajeUvozPregled) {
-  await shraniUvozDoi(
+/** Shrani uvoz aktivnih nalogov; nato zaključene naloge za Višek materiala. Vrne opozorila (npr. manjka migracija 042). */
+export async function shraniIzdajeUvoz(datoteka: string, p: IzdajeUvozPregled): Promise<string[]> {
+  const uvozId = await shraniUvozDoi(
     "fp_doi_izdaje_uvozi",
     "fp_doi_izdaje",
     { datoteka, st_postavk: p.vrstice.length, st_nalogov: p.nalogov },
     p.vrstice,
   );
+  try {
+    const n = await shraniZakljuceneIzdaje(p.zakljuceneVrstice, uvozId);
+    return n ? [`Višek materiala: vpisanih / posodobljenih ${n} vrstic zaključenih nalogov.`] : [];
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    // Aktivni nalogi so že shranjeni - napaka pri zaključenih ne ustavi uvoza
+    return [/fp_vis_|does not exist|schema cache/i.test(m)
+      ? "Zaključeni nalogi za Višek materiala niso shranjeni - zaženi migracijo 042_visek_materiala.sql."
+      : `Zaključeni nalogi za Višek materiala niso shranjeni: ${m}`];
+  }
+}
+
+/** Vpiše zaključene naloge, ki jih še ni, in posodobi tiste z rokom v zadnjih 60 dneh (upsert nalog + ident). */
+async function shraniZakljuceneIzdaje(vrstice: ZakljucenaIzdaja[], uvozId: number): Promise<number> {
+  if (!vrstice.length) return 0;
+  const sb = getSupabase();
+  const od = addDays(todayWorkday(), -ZAKLJUCENI_DNI);
+  const shranjeni = new Set(
+    (await fetchAll<{ st_naloga: string }>((from, to) => sb.rpc("fp_vis_izdaje_nalogi", { p_od: od }).range(from, to))).map((x) => x.st_naloga),
+  );
+  const posodobi = addDays(todayWorkday(), -ZAKLJUCENI_POSODOBI_DNI);
+  // Par nalog + ident je v izvozu unikaten; dvojnik bi ustavil upsert celotnega kosa - obdrži zadnjega
+  const poKljucu = new Map<string, ZakljucenaIzdaja>();
+  for (const v of vrstice) if (!shranjeni.has(v.st_naloga) || (v.rok_izdelave ?? "9999") >= posodobi) poKljucu.set(`${v.st_naloga} ${v.ident}`, v);
+  const zaVpis = [...poKljucu.values()];
+  for (const kos of kosi(zaVpis, 1000)) {
+    const { error } = await sb
+      .from("fp_vis_izdaje")
+      .upsert(kos.map((x) => ({ ...x, uvoz_id: uvozId, visible: true })), { onConflict: "st_naloga,ident" });
+    if (error) throw new Error(error.message);
+  }
+  return zaVpis.length;
 }
 
 export async function shraniPrevzemeUvoz(datoteka: string, p: PrevzemiUvozPregled) {
