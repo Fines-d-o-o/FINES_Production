@@ -224,3 +224,9 @@ input[type="range"].fp-range {
 [role="dialog"] .fp-thead {
   top: 0;
 }
+
+/* Gnezdena tabela (v razširjeni vrstici druge tabele): glava se ne lepi - sicer jo zamik
+   --fp-thead-top potisne na sredino notranje tabele */
+td .fp-thead {
+  position: static;
+}
